@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "477583232916",
+    "project_id": "likealocal-70513",
+    "storage_bucket": "likealocal-70513.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:477583232916:android:1dacb0815401656911c981",
+        "android_client_info": {
+          "package_name": "com.example.likealocal_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgVs6wLIXx8p8ziFz4-ltH2kXo2AcTfKk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
