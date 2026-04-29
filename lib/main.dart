@@ -3,7 +3,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'firebase_options.dart';
-
+import 'package:provider/provider.dart';
+import 'providers/home_provider.dart';
+import 'providers/search_provider.dart';
+import 'screens/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -19,9 +22,19 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: AuthWrapper(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => HomeProvider()),
+        ChangeNotifierProvider(create: (_) => SearchProvider()),
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          cardColor: Colors.white,
+        ),
+        home: AuthWrapper(),
+      ),
     );
   }
 }
@@ -51,25 +64,7 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
-// 🏠 Home Screen
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Home")),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () async {
-            await FirebaseAuth.instance.signOut();
-          },
-          child: Text("Logout"),
-        ),
-      ),
-    );
-  }
-}
+// The new HomeScreen is imported from screens/home_screen.dart
 
 // 🔐 Login Screen
 class LoginScreen extends StatefulWidget {
