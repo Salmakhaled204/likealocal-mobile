@@ -15,6 +15,8 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -26,6 +28,8 @@ class MyApp extends StatelessWidget {
 
 // 🔐 Check if user logged in
 class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -49,6 +53,8 @@ class AuthWrapper extends StatelessWidget {
 
 // 🏠 Home Screen
 class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -67,6 +73,8 @@ class HomeScreen extends StatelessWidget {
 
 // 🔐 Login Screen
 class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
