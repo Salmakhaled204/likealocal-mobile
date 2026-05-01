@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/search_provider.dart';
 
 class FilterBottomSheet extends StatelessWidget {
-  FilterBottomSheet({Key? key}) : super(key: key);
+  FilterBottomSheet({super.key});
 
   final List<String> availableCategories = [
     'Restaurants',

@@ -11,7 +11,7 @@ class SearchProvider extends ChangeNotifier {
 
   // Filters
   String _searchQuery = '';
-  List<String> _selectedCategories = [];
+  final List<String> _selectedCategories = [];
 
   List<Place> get searchResults => _searchResults;
   bool get isLoading => _isLoading;

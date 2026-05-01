@@ -7,7 +7,7 @@ import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/shimmer_loading.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({Key? key}) : super(key: key);
+  const SearchScreen({super.key});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
 class ShimmerLoadingList extends StatelessWidget {
-  const ShimmerLoadingList({Key? key}) : super(key: key);
+  const ShimmerLoadingList({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +48,7 @@ class ShimmerLoadingList extends StatelessWidget {
 }
 
 class ShimmerLoadingHorizontal extends StatelessWidget {
-  const ShimmerLoadingHorizontal({Key? key}) : super(key: key);
+  const ShimmerLoadingHorizontal({super.key});
 
   @override
   Widget build(BuildContext context) {

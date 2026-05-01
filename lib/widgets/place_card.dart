@@ -8,10 +8,10 @@ class PlaceCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const PlaceCard({
-    Key? key,
+    super.key,
     required this.place,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
