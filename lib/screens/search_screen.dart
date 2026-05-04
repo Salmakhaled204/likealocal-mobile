@@ -5,6 +5,7 @@ import '../providers/search_provider.dart';
 import '../widgets/place_card.dart';
 import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/shimmer_loading.dart';
+import 'place_details_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -15,7 +16,7 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
-  
+
   @override
   void initState() {
     super.initState();
@@ -104,7 +105,9 @@ class _SearchScreenState extends State<SearchScreen> {
                         IconButton(
                           icon: Icon(
                             Icons.tune,
-                            color: hasFilters ? Theme.of(context).primaryColor : Colors.grey[600],
+                            color: hasFilters
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey[600],
                           ),
                           onPressed: _showFilterSheet,
                         ),
@@ -149,16 +152,24 @@ class _SearchScreenState extends State<SearchScreen> {
                   );
                 }
 
-                if (searchProvider.searchQuery.isEmpty && searchProvider.selectedCategories.isEmpty) {
+                if (searchProvider.searchQuery.isEmpty &&
+                    searchProvider.selectedCategories.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.search_rounded, size: 80, color: Colors.grey[300]),
+                        Icon(
+                          Icons.search_rounded,
+                          size: 80,
+                          color: Colors.grey[300],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           "Start typing to search...",
-                          style: GoogleFonts.inter(color: Colors.grey[500], fontSize: 16),
+                          style: GoogleFonts.inter(
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
@@ -170,11 +181,18 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.inbox_rounded, size: 80, color: Colors.grey[300]),
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 80,
+                          color: Colors.grey[300],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           "No results found",
-                          style: GoogleFonts.inter(color: Colors.grey[500], fontSize: 16),
+                          style: GoogleFonts.inter(
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
@@ -189,7 +207,12 @@ class _SearchScreenState extends State<SearchScreen> {
                     return PlaceCard(
                       place: place,
                       onTap: () {
-                        // TODO: Navigate to place details
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PlaceDetailsScreen(place: place),
+                          ),
+                        );
                       },
                     );
                   },

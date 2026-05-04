@@ -17,24 +17,15 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         return windows;
       case TargetPlatform.linux:
@@ -50,20 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCgVs6wLIXx8p8ziFz4-ltH2kXo2AcTfKk',
-    appId: '1:477583232916:android:1dacb0815401656911c981',
-    messagingSenderId: '477583232916',
-    projectId: 'likealocal-70513',
-    storageBucket: 'likealocal-70513.firebasestorage.app',
+    apiKey: 'AIzaSyACaz64-DqhrDHUTVF6nKJxq5zM8An2-AQ',
+    appId: '1:667443185710:android:42ae6c570adbd1e08877bf',
+    messagingSenderId: '667443185710',
+    projectId: 'likealocal-new-bb959',
+    storageBucket: 'likealocal-new-bb959.firebasestorage.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBY2uzXU748PG1Nlw4WPaN2Xl8QnOewWVA',
-    appId: '1:477583232916:web:35db3273e779517111c981',
-    messagingSenderId: '477583232916',
-    projectId: 'likealocal-70513',
-    authDomain: 'likealocal-70513.firebaseapp.com',
-    storageBucket: 'likealocal-70513.firebasestorage.app',
-    measurementId: 'G-QZFV96Q9M7',
+    apiKey: 'AIzaSyBYG5to9H8hPoPqN0DiGP8Ep6wAWdQGpnE',
+    appId: '1:667443185710:web:db383460edac256c8877bf',
+    messagingSenderId: '667443185710',
+    projectId: 'likealocal-new-bb959',
+    authDomain: 'likealocal-new-bb959.firebaseapp.com',
+    storageBucket: 'likealocal-new-bb959.firebasestorage.app',
+    measurementId: 'G-Q29EYE496C',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyBYG5to9H8hPoPqN0DiGP8Ep6wAWdQGpnE',
+    appId: '1:667443185710:web:3128ec6ab0b246328877bf',
+    messagingSenderId: '667443185710',
+    projectId: 'likealocal-new-bb959',
+    authDomain: 'likealocal-new-bb959.firebaseapp.com',
+    storageBucket: 'likealocal-new-bb959.firebasestorage.app',
+    measurementId: 'G-60EHLLHXT5',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyCWRzmfmrC7SL0uis2RymAoVpzrfckNd_Q',
+    appId: '1:667443185710:ios:6a80fb589360e8348877bf',
+    messagingSenderId: '667443185710',
+    projectId: 'likealocal-new-bb959',
+    storageBucket: 'likealocal-new-bb959.firebasestorage.app',
+    iosBundleId: 'com.example.likealocalMobile',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyCWRzmfmrC7SL0uis2RymAoVpzrfckNd_Q',
+    appId: '1:667443185710:ios:6a80fb589360e8348877bf',
+    messagingSenderId: '667443185710',
+    projectId: 'likealocal-new-bb959',
+    storageBucket: 'likealocal-new-bb959.firebasestorage.app',
+    iosBundleId: 'com.example.likealocalMobile',
+  );
+
 }

@@ -25,8 +25,12 @@ class Place {
 
   factory Place.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return Place.fromMap(doc.id, data);
+  }
+
+  factory Place.fromMap(String id, Map<String, dynamic> data) {
     return Place(
-      id: doc.id,
+      id: id,
       title: data['title'] ?? '',
       description: data['description'] ?? '',
       category: data['category'] ?? 'Other',
