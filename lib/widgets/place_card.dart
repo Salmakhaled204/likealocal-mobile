@@ -24,7 +24,7 @@ class PlaceCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -33,27 +33,31 @@ class PlaceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Section
+            // Image
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16)),
                   child: CachedNetworkImage(
-                    imageUrl: place.imageUrls.isNotEmpty 
-                        ? place.imageUrls.first 
-                        : 'https://via.placeholder.com/400x200?text=No+Image',
+                    imageUrl: place.imageUrls.isNotEmpty
+                        ? place.imageUrls.first
+                        : 'https://placehold.co/400x200/cccccc/999999?text=No+Image',
                     height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
                       height: 180,
                       color: Colors.grey[200],
-                      child: const Center(child: CircularProgressIndicator()),
+                      child: const Center(
+                          child: CircularProgressIndicator()),
                     ),
-                    errorWidget: (context, url, error) => Container(
+                    errorWidget: (context, url, error) =>
+                        Container(
                       height: 180,
                       color: Colors.grey[200],
-                      child: const Icon(Icons.error),
+                      child: const Icon(Icons.broken_image,
+                          color: Colors.grey),
                     ),
                   ),
                 ),
@@ -62,13 +66,15 @@ class PlaceCard extends StatelessWidget {
                     top: 12,
                     left: 12,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.amber,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
+                            color: Colors.black.withValues(
+                                alpha: 0.2),
                             blurRadius: 4,
                           ),
                         ],
@@ -76,7 +82,8 @@ class PlaceCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.star, color: Colors.white, size: 16),
+                          const Icon(Icons.star,
+                              color: Colors.white, size: 16),
                           const SizedBox(width: 4),
                           Text(
                             'Super User',
@@ -94,15 +101,17 @@ class PlaceCard extends StatelessWidget {
                   top: 12,
                   right: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                        const Icon(Icons.star_rounded,
+                            color: Colors.amber, size: 16),
                         const SizedBox(width: 4),
                         Text(
                           place.averageRating.toStringAsFixed(1),
@@ -117,15 +126,16 @@ class PlaceCard extends StatelessWidget {
                 ),
               ],
             ),
-            
-            // Details Section
+
+            // Details
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
@@ -139,15 +149,19 @@ class PlaceCard extends StatelessWidget {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           place.category,
                           style: GoogleFonts.inter(
-                            color: Theme.of(context).primaryColor,
+                            color:
+                                Theme.of(context).primaryColor,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),

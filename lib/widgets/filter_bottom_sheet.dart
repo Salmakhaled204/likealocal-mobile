@@ -52,7 +52,7 @@ class FilterBottomSheet extends StatelessWidget {
                   ),
                   TextButton(
                     onPressed: () {
-                      searchProvider.clearFilters();
+                      searchProvider.clearManualFilters();
                       Navigator.pop(context);
                     },
                     child: Text(

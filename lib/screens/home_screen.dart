@@ -4,13 +4,13 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/place.dart';
 import '../providers/home_provider.dart';
-import '../providers/user_provider.dart';
 import '../widgets/place_card.dart';
 import '../widgets/shimmer_loading.dart';
+import 'add_place_screen.dart';
 import 'favorites_screen.dart';
-import 'place_details_screen.dart';
-import 'profile_settings_screen.dart';
 import 'search_screen.dart';
+import 'place_details_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,10 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-
       final homeProvider = context.read<HomeProvider>();
       final uid = FirebaseAuth.instance.currentUser?.uid;
-
       await Future.wait([
         homeProvider.fetchPlaces(),
         if (uid != null)
@@ -41,9 +39,18 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PlaceDetailsScreen(place: place),
-      ),
+          builder: (_) => PlaceDetailsScreen(place: place)),
     );
+  }
+
+  Future<void> _navigateToAddPlace(BuildContext context) async {
+    final added = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
+    );
+
+    if (!context.mounted || added != true) return;
+    await context.read<HomeProvider>().fetchPlaces();
   }
 
   @override
@@ -56,59 +63,94 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-              ),
+                  color: Theme.of(context).primaryColor),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Text(
-                    'LikeALocal',
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const CircleAvatar(
+                    radius: 26,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.person,
+                        color: Colors.white, size: 26),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     FirebaseAuth.instance.currentUser?.email ?? '',
-                    maxLines: 1,
+                    style: GoogleFonts.inter(
+                        color: Colors.white70, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(color: Colors.white70),
+                  ),
+                  Text(
+                    'LikeALocal',
+                    style: GoogleFonts.inter(
+                        color: Colors.white, fontSize: 20),
                   ),
                 ],
               ),
             ),
+
+            // Profile
             ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Profile & Privacy'),
+              leading: const Icon(Icons.person_outline),
+              title: const Text('My Profile'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ProfileSettingsScreen(),
-                  ),
+                      builder: (_) => const ProfileScreen()),
                 );
               },
             ),
+
+            // Search
             ListTile(
-              leading: const Icon(Icons.favorite),
+              leading: const Icon(Icons.search),
+              title: const Text('Search Places'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const SearchScreen()),
+                );
+              },
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.add_location_alt_outlined),
+              title: const Text('Add Place'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToAddPlace(context);
+              },
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.favorite_border),
               title: const Text('Favorites'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const FavoritesScreen()),
                 );
               },
             ),
+
+            const Divider(),
+
+            // Logout
             ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Logout'),
+              leading:
+                  const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Logout',
+                  style: TextStyle(color: Colors.redAccent)),
               onTap: () async {
-                await context.read<UserProvider>().logout();
+                Navigator.pop(context);
+                await FirebaseAuth.instance.signOut();
               },
             ),
           ],
@@ -120,23 +162,23 @@ class _HomeScreenState extends State<HomeScreen> {
             slivers: [
               _buildSliverAppBar(context),
 
-              if (homeProvider.errorMessage != null && !homeProvider.isLoading)
+              // Error
+              if (homeProvider.errorMessage != null &&
+                  !homeProvider.isLoading)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: Center(
                       child: Column(
                         children: [
-                          const Icon(
-                            Icons.wifi_off_rounded,
-                            size: 64,
-                            color: Colors.grey,
-                          ),
+                          const Icon(Icons.wifi_off_rounded,
+                              size: 64, color: Colors.grey),
                           const SizedBox(height: 16),
                           Text(
                             homeProvider.errorMessage!,
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(color: Colors.grey[600]),
+                            style: GoogleFonts.inter(
+                                color: Colors.grey[600]),
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
@@ -149,16 +191,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
+              // Recommendations
               if (homeProvider.errorMessage == null)
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+                        padding: const EdgeInsets.fromLTRB(
+                            16, 24, 16, 12),
                         child: Text(
                           homeProvider.isPersonalized
-                              ? 'Recommended for You'
+                              ? 'Recommended for You ✨'
                               : 'Top Picks',
                           style: GoogleFonts.inter(
                             fontSize: 20,
@@ -171,16 +215,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: homeProvider.isLoading &&
                                 homeProvider.places.isEmpty
                             ? const ShimmerLoadingHorizontal()
-                            : _buildRecommendations(context, homeProvider),
+                            : _buildRecommendations(
+                                context, homeProvider),
                       ),
                     ],
                   ),
                 ),
 
+              // Feed header
               if (homeProvider.errorMessage == null)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+                    padding: const EdgeInsets.fromLTRB(
+                        16, 24, 16, 12),
                     child: Text(
                       'Explore Like A Local',
                       style: GoogleFonts.inter(
@@ -191,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
+              // Empty state
               if (!homeProvider.isLoading &&
                   homeProvider.places.isEmpty &&
                   homeProvider.errorMessage == null)
@@ -200,11 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Center(
                       child: Column(
                         children: [
-                          const Icon(
-                            Icons.travel_explore,
-                            size: 80,
-                            color: Colors.grey,
-                          ),
+                          const Icon(Icons.travel_explore,
+                              size: 80, color: Colors.grey),
                           const SizedBox(height: 16),
                           Text(
                             'No places found yet.\nBe the first to add one!',
@@ -220,26 +265,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              if (homeProvider.isLoading && homeProvider.places.isEmpty)
+              // Shimmer
+              if (homeProvider.isLoading &&
+                  homeProvider.places.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 16.0),
                     child: ShimmerLoadingList(),
                   ),
                 )
+
+              // Feed list
               else if (homeProvider.places.isNotEmpty)
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 8.0,
-                  ),
+                      horizontal: 16.0, vertical: 8.0),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final Place place = homeProvider.places[index];
+                        final Place place =
+                            homeProvider.places[index];
                         return PlaceCard(
                           place: place,
-                          onTap: () => _navigateToDetails(context, place),
+                          onTap: () => _navigateToDetails(
+                              context, place),
                         );
                       },
                       childCount: homeProvider.places.length,
@@ -247,10 +297,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 40)),
+              const SliverToBoxAdapter(
+                  child: SizedBox(height: 40)),
             ],
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _navigateToAddPlace(context),
+        icon: const Icon(Icons.add_location_alt),
+        label: const Text('Add Place'),
       ),
     );
   }
@@ -262,7 +318,8 @@ class _HomeScreenState extends State<HomeScreen> {
       pinned: true,
       elevation: 0,
       flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+        titlePadding:
+            const EdgeInsets.only(left: 16, bottom: 16),
         title: Text(
           'Discover',
           style: GoogleFonts.inter(
@@ -277,6 +334,8 @@ class _HomeScreenState extends State<HomeScreen> {
               'https://images.unsplash.com/photo-1518684079-3c830dcef090'
               '?q=80&w=1000&auto=format&fit=crop',
               fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  Container(color: Colors.blue[800]),
             ),
             Container(
               decoration: BoxDecoration(
@@ -299,7 +358,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const SearchScreen()),
+              MaterialPageRoute(
+                  builder: (_) => const SearchScreen()),
             );
           },
         ),
@@ -308,7 +368,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRecommendations(BuildContext context, HomeProvider provider) {
+  Widget _buildRecommendations(
+      BuildContext context, HomeProvider provider) {
     final recommendations = provider.recommendations;
 
     if (recommendations.isEmpty) {
@@ -341,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   image: NetworkImage(
                     place.imageUrls.isNotEmpty
                         ? place.imageUrls.first
-                        : 'https://via.placeholder.com/150',
+                        : 'https://placehold.co/160x200/cccccc/999999?text=No+Image',
                   ),
                   fit: BoxFit.cover,
                 ),
@@ -375,18 +436,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.star,
-                          color: Colors.amber,
-                          size: 14,
-                        ),
+                        const Icon(Icons.star,
+                            color: Colors.amber, size: 14),
                         const SizedBox(width: 4),
                         Text(
                           place.averageRating.toStringAsFixed(1),
                           style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
+                              color: Colors.white, fontSize: 12),
                         ),
                       ],
                     ),

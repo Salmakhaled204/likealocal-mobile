@@ -10,6 +10,16 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function ownsReview() {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    function createsOwnReview(reviewId) {
+      return isSignedIn()
+        && request.auth.uid == reviewId
+        && request.resource.data.userId == request.auth.uid;
+    }
+
     match /users/{userId} {
       allow create, read, update, delete: if isOwner(userId);
 
@@ -20,12 +30,16 @@ service cloud.firestore {
 
     match /places/{placeId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid;
 
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if isSignedIn() && request.auth.uid == reviewId;
-        allow update, delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+        allow create: if createsOwnReview(reviewId);
+        allow update, delete: if ownsReview();
       }
     }
   }

@@ -80,6 +80,11 @@ class SearchProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearManualFilters() {
+    _selectedCategories.clear();
+    _scheduleSearch();
+  }
+
   // ── Debounce scheduling ──────────────────────────────────────────────────
 
   void _scheduleSearch() {
@@ -110,7 +115,7 @@ class SearchProvider extends ChangeNotifier {
 
     try {
       Query<Map<String, dynamic>> query =
-          _firestore.collection('places').limit(100); // Prevent full collection read
+          _firestore.collection('places').limit(100);
 
       // Merge manually selected categories with user preferences (OR filter).
       final Set<String> categoryFilter = {
@@ -125,8 +130,7 @@ class SearchProvider extends ChangeNotifier {
         query = query.where('category', whereIn: limitedFilter);
       }
 
-      final snapshot =
-          await query.get(const GetOptions(source: Source.serverAndCache));
+      final snapshot = await query.get();
 
       // Discard stale responses from slower earlier requests.
       if (myToken != _queryToken) return;
