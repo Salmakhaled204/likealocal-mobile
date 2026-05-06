@@ -1,457 +1,68 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/place.dart';
-import '../providers/home_provider.dart';
-import '../widgets/place_card.dart';
-import '../widgets/shimmer_loading.dart';
-import 'add_place_screen.dart';
-import 'favorites_screen.dart';
-import 'search_screen.dart';
-import 'place_details_screen.dart';
 import 'profile_screen.dart';
+import 'map_screen.dart';
+import 'add_place_screen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final homeProvider = context.read<HomeProvider>();
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      await Future.wait([
-        homeProvider.fetchPlaces(),
-        if (uid != null)
-          homeProvider.fetchPersonalizedRecommendationsForUser(uid),
-      ]);
-    });
-  }
-
-  void _navigateToDetails(BuildContext context, Place place) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (_) => PlaceDetailsScreen(place: place)),
-    );
-  }
-
-  Future<void> _navigateToAddPlace(BuildContext context) async {
-    final added = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
-    );
-
-    if (!context.mounted || added != true) return;
-    await context.read<HomeProvider>().fetchPlaces();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+      appBar: AppBar(title: Text('LikeALocal')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const CircleAvatar(
-                    radius: 26,
-                    backgroundColor: Colors.white24,
-                    child: Icon(Icons.person,
-                        color: Colors.white, size: 26),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    FirebaseAuth.instance.currentUser?.email ?? '',
-                    style: GoogleFonts.inter(
-                        color: Colors.white70, fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'LikeALocal',
-                    style: GoogleFonts.inter(
-                        color: Colors.white, fontSize: 20),
-                  ),
-                ],
-              ),
-            ),
 
-            // Profile
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: const Text('My Profile'),
-              onTap: () {
-                Navigator.pop(context);
+            ElevatedButton(
+              onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const ProfileScreen()),
+                  MaterialPageRoute(builder: (_) => ProfileScreen()),
+                );
+              },
+              child: Text('Go to Profile'),
+            ),
+
+            SizedBox(height: 16),
+
+            ElevatedButton.icon(
+              icon: Icon(Icons.map),
+              label: Text('Explore Map'),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => MapScreen()),
                 );
               },
             ),
 
-            // Search
-            ListTile(
-              leading: const Icon(Icons.search),
-              title: const Text('Search Places'),
-              onTap: () {
-                Navigator.pop(context);
+            SizedBox(height: 16),
+
+            ElevatedButton.icon(
+              icon: Icon(Icons.add_location_alt),
+              label: Text('Add a Place'),
+              onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const SearchScreen()),
+                  MaterialPageRoute(builder: (_) => AddPlaceScreen()),
                 );
               },
             ),
 
-            ListTile(
-              leading: const Icon(Icons.add_location_alt_outlined),
-              title: const Text('Add Place'),
-              onTap: () {
-                Navigator.pop(context);
-                _navigateToAddPlace(context);
-              },
-            ),
+            SizedBox(height: 30),
 
-            ListTile(
-              leading: const Icon(Icons.favorite_border),
-              title: const Text('Favorites'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const FavoritesScreen()),
-                );
-              },
-            ),
-
-            const Divider(),
-
-            // Logout
-            ListTile(
-              leading:
-                  const Icon(Icons.logout, color: Colors.redAccent),
-              title: const Text('Logout',
-                  style: TextStyle(color: Colors.redAccent)),
-              onTap: () async {
-                Navigator.pop(context);
+            ElevatedButton(
+              onPressed: () async {
                 await FirebaseAuth.instance.signOut();
               },
+              child: Text('Logout'),
             ),
+
           ],
         ),
-      ),
-      body: Consumer<HomeProvider>(
-        builder: (context, homeProvider, _) {
-          return CustomScrollView(
-            slivers: [
-              _buildSliverAppBar(context),
-
-              // Error
-              if (homeProvider.errorMessage != null &&
-                  !homeProvider.isLoading)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          const Icon(Icons.wifi_off_rounded,
-                              size: 64, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          Text(
-                            homeProvider.errorMessage!,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(
-                                color: Colors.grey[600]),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: homeProvider.fetchPlaces,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Recommendations
-              if (homeProvider.errorMessage == null)
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                            16, 24, 16, 12),
-                        child: Text(
-                          homeProvider.isPersonalized
-                              ? 'Recommended for You ✨'
-                              : 'Top Picks',
-                          style: GoogleFonts.inter(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: homeProvider.isLoading &&
-                                homeProvider.places.isEmpty
-                            ? const ShimmerLoadingHorizontal()
-                            : _buildRecommendations(
-                                context, homeProvider),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Feed header
-              if (homeProvider.errorMessage == null)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                        16, 24, 16, 12),
-                    child: Text(
-                      'Explore Like A Local',
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Empty state
-              if (!homeProvider.isLoading &&
-                  homeProvider.places.isEmpty &&
-                  homeProvider.errorMessage == null)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          const Icon(Icons.travel_explore,
-                              size: 80, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No places found yet.\nBe the first to add one!',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Shimmer
-              if (homeProvider.isLoading &&
-                  homeProvider.places.isEmpty)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 16.0),
-                    child: ShimmerLoadingList(),
-                  ),
-                )
-
-              // Feed list
-              else if (homeProvider.places.isNotEmpty)
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 8.0),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final Place place =
-                            homeProvider.places[index];
-                        return PlaceCard(
-                          place: place,
-                          onTap: () => _navigateToDetails(
-                              context, place),
-                        );
-                      },
-                      childCount: homeProvider.places.length,
-                    ),
-                  ),
-                ),
-
-              const SliverToBoxAdapter(
-                  child: SizedBox(height: 40)),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _navigateToAddPlace(context),
-        icon: const Icon(Icons.add_location_alt),
-        label: const Text('Add Place'),
-      ),
-    );
-  }
-
-  Widget _buildSliverAppBar(BuildContext context) {
-    return SliverAppBar(
-      expandedHeight: 180.0,
-      floating: false,
-      pinned: true,
-      elevation: 0,
-      flexibleSpace: FlexibleSpaceBar(
-        titlePadding:
-            const EdgeInsets.only(left: 16, bottom: 16),
-        title: Text(
-          'Discover',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.network(
-              'https://images.unsplash.com/photo-1518684079-3c830dcef090'
-              '?q=80&w=1000&auto=format&fit=crop',
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  Container(color: Colors.blue[800]),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.7),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search, color: Colors.white),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const SearchScreen()),
-            );
-          },
-        ),
-        const SizedBox(width: 8),
-      ],
-    );
-  }
-
-  Widget _buildRecommendations(
-      BuildContext context, HomeProvider provider) {
-    final recommendations = provider.recommendations;
-
-    if (recommendations.isEmpty) {
-      return SizedBox(
-        height: 150,
-        child: Center(
-          child: Text(
-            'No recommendations available',
-            style: GoogleFonts.inter(color: Colors.grey),
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: 200,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: recommendations.length,
-        itemBuilder: (context, index) {
-          final Place place = recommendations[index];
-          return GestureDetector(
-            onTap: () => _navigateToDetails(context, place),
-            child: Container(
-              width: 160,
-              margin: const EdgeInsets.only(right: 16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                image: DecorationImage(
-                  image: NetworkImage(
-                    place.imageUrls.isNotEmpty
-                        ? place.imageUrls.first
-                        : 'https://placehold.co/160x200/cccccc/999999?text=No+Image',
-                  ),
-                  fit: BoxFit.cover,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.8),
-                    ],
-                  ),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      place.title,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(Icons.star,
-                            color: Colors.amber, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          place.averageRating.toStringAsFixed(1),
-                          style: GoogleFonts.inter(
-                              color: Colors.white, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
