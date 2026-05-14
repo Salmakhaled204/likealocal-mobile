@@ -29,18 +29,18 @@ class _AiChatScreenState extends State<AiChatScreen> {
   final ScrollController _scrollController = ScrollController();
 
   final List<ChatMessage> _messages = [];
-
-  // keeps conversation history for context
   final List<Map<String, String>> _conversationHistory = [];
 
   bool _isLoading = false;
 
   // ── Gemini API settings ─────────────────────────────────────────────────────
   // Paste your Gemini API key here between the quotes.
+  // Do not write your real API key inside the "if" condition below.
   static const String _apiKey = 'AIzaSyAJiB16C9K1Pc2a4f4vD57K7EN4-8kOQOM';
 
-  // Current Gemini Flash model
-  static const String _modelName = 'gemini-2.5-flash';
+  // Free-tier friendly model.
+  // If this gives "model not found", try: gemini-2.0-flash
+  static const String _modelName = 'gemini-2.0-flash-lite';
 
   static const String _systemPrompt = '''
 You are LikeALocal's friendly travel assistant. You help users discover authentic local places, hidden gems, restaurants, cafes, and experiences in cities around the world — especially in Cairo, Egypt.
@@ -78,13 +78,13 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!_scrollController.hasClients) return;
+
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -92,14 +92,6 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     final text = _inputController.text.trim();
 
     if (text.isEmpty || _isLoading) return;
-
-    // correct key check
-    if (_apiKey == 'PASTE_YOUR_KEY_HERE' || _apiKey.trim().isEmpty) {
-      _addErrorMessage(
-        'Gemini API key is missing. Please paste your API key in the code first.',
-      );
-      return;
-    }
 
     setState(() {
       _messages.add(
@@ -114,10 +106,24 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     _inputController.clear();
     _scrollToBottom();
 
+    // If key is missing, use demo mode instead of breaking the app.
+    if (_apiKey == 'PASTE_YOUR_GEMINI_API_KEY_HERE' || _apiKey.trim().isEmpty) {
+      _addBotMessage(
+        '${_getFallbackReply(text)}\n\nNote: Demo mode is running because the Gemini API key is not added yet.',
+      );
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+
+      _scrollToBottom();
+      return;
+    }
+
     try {
-      // keep only recent messages to reduce token usage
-      final recentHistory = _conversationHistory.length > 8
-          ? _conversationHistory.sublist(_conversationHistory.length - 8)
+      // Keep only recent messages to reduce token usage on the free tier.
+      final recentHistory = _conversationHistory.length > 2
+          ? _conversationHistory.sublist(_conversationHistory.length - 2)
           : _conversationHistory;
 
       final url = Uri.parse(
@@ -144,92 +150,109 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
               ],
             };
           }).toList(),
-          'generationConfig': {'maxOutputTokens': 500, 'temperature': 0.7},
+          'generationConfig': {'maxOutputTokens': 180, 'temperature': 0.7},
         }),
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final reply = _extractGeminiReply(data);
 
-        final candidates = data['candidates'] as List<dynamic>?;
-        final firstCandidate = candidates?.isNotEmpty == true
-            ? candidates!.first as Map<String, dynamic>
-            : null;
-        final content = firstCandidate?['content'] as Map<String, dynamic>?;
-        final parts = content?['parts'] as List<dynamic>?;
-        final firstPart = parts?.isNotEmpty == true
-            ? parts!.first as Map<String, dynamic>
-            : null;
-        final reply = firstPart?['text'];
-
-        final finalReply = reply == null || reply.toString().trim().isEmpty
-            ? _emptyResponseMessage(data)
-            : reply.toString();
-
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: finalReply,
-              isUser: false,
-              timestamp: DateTime.now(),
-            ),
-          );
-
-          _conversationHistory.add({
-            'role': 'assistant',
-            'content': finalReply,
-          });
-        });
+        if (reply.trim().isEmpty) {
+          _addBotMessage(_emptyResponseMessage(data));
+        } else {
+          _addBotMessage(reply);
+        }
       } else {
-        _handleApiError(response.statusCode, response.body);
+        _handleApiError(
+          statusCode: response.statusCode,
+          body: response.body,
+          userMessage: text,
+        );
       }
-    } catch (e) {
-      _addErrorMessage(
-        'Something went wrong. Please check your internet connection and try again.',
+    } catch (_) {
+      _addBotMessage(
+        '${_getFallbackReply(text)}\n\nNote: Demo mode is running because the AI service could not be reached.',
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
 
       _scrollToBottom();
     }
   }
 
-  void _handleApiError(int statusCode, String body) {
-    String cleanMessage = 'Something went wrong. Please try again.';
+  String _extractGeminiReply(Map<String, dynamic> data) {
+    try {
+      final candidates = data['candidates'] as List<dynamic>?;
+
+      if (candidates == null || candidates.isEmpty) {
+        return '';
+      }
+
+      final firstCandidate = candidates.first as Map<String, dynamic>;
+      final content = firstCandidate['content'] as Map<String, dynamic>?;
+
+      if (content == null) {
+        return '';
+      }
+
+      final parts = content['parts'] as List<dynamic>?;
+
+      if (parts == null || parts.isEmpty) {
+        return '';
+      }
+
+      final firstPart = parts.first as Map<String, dynamic>;
+      final text = firstPart['text'];
+
+      return text?.toString() ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  void _handleApiError({
+    required int statusCode,
+    required String body,
+    required String userMessage,
+  }) {
+    String cleanMessage;
 
     try {
-      final data = jsonDecode(body);
+      final data = jsonDecode(body) as Map<String, dynamic>;
       final errorMessage = data['error']?['message']?.toString() ?? '';
+      final lowerError = errorMessage.toLowerCase();
 
-      if (statusCode == 429 || errorMessage.toLowerCase().contains('quota')) {
+      if (statusCode == 429 || lowerError.contains('quota')) {
         cleanMessage =
-            'Gemini API limit reached. Please wait 1 minute and try again.\n\nIf it keeps happening, your API key has no free quota left. Create a new key or enable billing.';
+            '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because the free Gemini limit was reached.';
       } else if (statusCode == 400) {
         cleanMessage =
-            'Bad request. Please check the API request format and try again.';
+            '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because the AI request format was rejected.';
       } else if (statusCode == 403) {
         cleanMessage =
-            'API key problem. Please check that your Gemini API key is correct and enabled.';
+            '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because Gemini access is blocked for this API key/project.';
       } else if (statusCode == 404) {
         cleanMessage =
-            'Model not found. Change _modelName to another Gemini model, for example gemini-2.5-flash.';
+            '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because the selected Gemini model was not found. Try gemini-2.0-flash.';
       } else {
-        cleanMessage = 'Error $statusCode: $errorMessage';
+        cleanMessage =
+            '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because Gemini returned error $statusCode.';
       }
     } catch (_) {
-      cleanMessage = 'Error $statusCode. Please try again.';
+      cleanMessage =
+          '${_getFallbackReply(userMessage)}\n\nNote: Demo mode is running because Gemini returned an unexpected error.';
     }
 
-    _addErrorMessage(cleanMessage);
+    _addBotMessage(cleanMessage);
   }
 
   String _emptyResponseMessage(Map<String, dynamic> data) {
     final promptFeedback = data['promptFeedback'] as Map<String, dynamic>?;
     final blockReason = promptFeedback?['blockReason']?.toString();
+
     if (blockReason != null && blockReason.isNotEmpty) {
       return 'Gemini blocked this message ($blockReason). Try asking in a different way.';
     }
@@ -238,7 +261,9 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     final firstCandidate = candidates?.isNotEmpty == true
         ? candidates!.first as Map<String, dynamic>
         : null;
+
     final finishReason = firstCandidate?['finishReason']?.toString();
+
     if (finishReason != null && finishReason.isNotEmpty) {
       return 'Gemini returned no text ($finishReason). Try again with a shorter question.';
     }
@@ -246,13 +271,154 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     return 'Gemini returned no response. Please try again.';
   }
 
-  void _addErrorMessage(String text) {
+  String _getFallbackReply(String userMessage) {
+    final message = userMessage.toLowerCase();
+
+    if (message.contains('cafe') ||
+        message.contains('coffee') ||
+        message.contains('قهوة') ||
+        message.contains('كافيه')) {
+      return '''
+Here are some café ideas in Cairo:
+
+• Zamalek: calm cafés with Nile views and cozy vibes
+• Maadi: quiet cafés for studying, working, or chilling
+• New Cairo: modern cafés, desserts, and group hangouts
+• Downtown: old local cafés with authentic Egyptian vibes
+
+Tip: For good vibes, go in the evening and check reviews before visiting.
+''';
+    }
+
+    if (message.contains('restaurant') ||
+        message.contains('food') ||
+        message.contains('eat') ||
+        message.contains('cheap') ||
+        message.contains('مطعم') ||
+        message.contains('اكل')) {
+      return '''
+Here are some local restaurant ideas:
+
+• Cheap: koshary, shawarma, foul, taameya, and local grills
+• Medium budget: Egyptian restaurants, pasta places, and casual dining
+• Fancy: Nile-view restaurants, rooftop spots, or hotel restaurants
+
+Best areas to search:
+• Zamalek
+• Maadi
+• Downtown Cairo
+• New Cairo
+• Heliopolis
+
+Tell me your area and budget, and I can suggest better options.
+''';
+    }
+
+    if (message.contains('night') ||
+        message.contains('nightlife') ||
+        message.contains('tonight') ||
+        message.contains('ليل') ||
+        message.contains('خروج')) {
+      return '''
+For nightlife or going out tonight in Cairo:
+
+• Zamalek: calm lounges, cafés, and Nile-side walks
+• Downtown Cairo: local food, walking, and old-city vibes
+• New Cairo: restaurants, desserts, and late-night cafés
+• Maadi: cozy cafés and relaxed places with friends
+• Nile Corniche: simple evening walk with a nice view
+
+Safety tip: Go with friends, check opening hours, and avoid very empty areas late at night.
+''';
+    }
+
+    if (message.contains('hidden') ||
+        message.contains('gem') ||
+        message.contains('local') ||
+        message.contains('secret') ||
+        message.contains('مكان جديد')) {
+      return '''
+Hidden gem ideas locals may enjoy:
+
+• Small cafés in Maadi side streets
+• Bookshops and old streets in Downtown
+• Quiet Nile-view spots in Zamalek
+• Local breakfast places in old Cairo areas
+• Small dessert shops in Heliopolis or New Cairo
+
+Tip: The best hidden gems are usually not the most famous places, so check recent reviews and photos.
+''';
+    }
+
+    if (message.contains('budget') ||
+        message.contains('money') ||
+        message.contains('price') ||
+        message.contains('رخيص') ||
+        message.contains('سعر')) {
+      return '''
+Here is a simple budget guide:
+
+• Low budget: koshary, foul, taameya, shawarma, local cafés
+• Medium budget: casual restaurants, dessert spots, modern cafés
+• Higher budget: rooftop restaurants, Nile-view places, hotel cafés
+
+For a student-friendly outing, choose Downtown, Maadi, or local areas near you.
+''';
+    }
+
+    if (message.contains('date') ||
+        message.contains('romantic') ||
+        message.contains('couple') ||
+        message.contains('رومانسي')) {
+      return '''
+For a romantic outing:
+
+• Zamalek: Nile-view cafés and calm restaurants
+• Maadi: cozy quiet cafés and dinner spots
+• New Cairo: modern restaurants and dessert places
+• Nile Corniche: simple walk with a nice view
+
+Choose a place that is quiet, not too crowded, and has good lighting.
+''';
+    }
+
+    if (message.contains('family') ||
+        message.contains('kids') ||
+        message.contains('عائلة')) {
+      return '''
+For a family-friendly outing:
+
+• New Cairo malls: restaurants, desserts, and safe walking areas
+• Maadi cafés/restaurants: calmer family vibe
+• Zamalek: lunch and Nile walk
+• Parks or outdoor spaces during good weather
+
+Look for places with parking, clean seating, and not-too-loud music.
+''';
+    }
+
+    return '''
+I can help you discover local places.
+
+Try asking:
+• Best cheap restaurants nearby
+• Hidden gems locals love
+• Best cafés with good vibes
+• What to do tonight?
+• Good places for families
+• Romantic places in Cairo
+''';
+  }
+
+  void _addBotMessage(String text) {
     if (!mounted) return;
 
     setState(() {
       _messages.add(
         ChatMessage(text: text, isUser: false, timestamp: DateTime.now()),
       );
+
+      _conversationHistory.add({'role': 'assistant', 'content': text});
     });
   }
 
@@ -275,6 +441,13 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
         ),
       );
     });
+  }
+
+  void _sendSuggestion(String text) {
+    if (_isLoading) return;
+
+    _inputController.text = text;
+    _sendMessage();
   }
 
   @override
@@ -339,32 +512,22 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
                 children: [
                   _SuggestionChip(
                     label: '🍕 Cheap restaurants',
-                    onTap: () {
-                      _inputController.text = 'Best cheap restaurants nearby';
-                      _sendMessage();
-                    },
+                    onTap: () =>
+                        _sendSuggestion('Best cheap restaurants nearby'),
                   ),
                   _SuggestionChip(
                     label: '💎 Hidden gems',
-                    onTap: () {
-                      _inputController.text = 'Show me hidden gems locals love';
-                      _sendMessage();
-                    },
+                    onTap: () =>
+                        _sendSuggestion('Show me hidden gems locals love'),
                   ),
                   _SuggestionChip(
                     label: '☕ Best cafes',
-                    onTap: () {
-                      _inputController.text = 'Best cafes with good vibes';
-                      _sendMessage();
-                    },
+                    onTap: () => _sendSuggestion('Best cafes with good vibes'),
                   ),
                   _SuggestionChip(
                     label: '🌙 Nightlife',
-                    onTap: () {
-                      _inputController.text =
-                          'What to do tonight for nightlife?';
-                      _sendMessage();
-                    },
+                    onTap: () =>
+                        _sendSuggestion('What to do tonight for nightlife?'),
                   ),
                 ],
               ),
@@ -411,11 +574,14 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
                     ),
                     child: TextField(
                       controller: _inputController,
+                      enabled: !_isLoading,
                       maxLines: 3,
                       minLines: 1,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Ask about local places…',
+                        hintText: _isLoading
+                            ? 'Assistant is typing...'
+                            : 'Ask about local places…',
                         hintStyle: GoogleFonts.inter(
                           color: Colors.grey[500],
                           fontSize: 14,
@@ -432,7 +598,7 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
-                  onTap: _sendMessage,
+                  onTap: _isLoading ? null : _sendMessage,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: 46,
