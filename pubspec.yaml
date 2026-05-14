@@ -16,7 +16,7 @@ dependencies:
   firebase_auth: ^6.4.0
   firebase_database: ^12.3.0
   cloud_firestore: ^6.3.0
-  firebase_storage: 13.0.0
+  firebase_storage: ^13.0.0
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   geolocator: ^13.0.2
@@ -25,6 +25,11 @@ dependencies:
   google_fonts: ^8.1.0
   provider: ^6.1.5+1
   shimmer: ^3.0.0
+
+  # ── NEW: added for Member 5 features ──────────────────────────────────────
+  firebase_messaging: ^16.2.0
+  flutter_local_notifications: ^18.0.0
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:
