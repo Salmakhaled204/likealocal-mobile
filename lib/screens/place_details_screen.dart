@@ -187,15 +187,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     final average = snap.docs.isEmpty
         ? 0.0
         : snap.docs.fold<double>(
-              0,
-              (sum, doc) => sum + ((doc.data()['rating'] as num?) ?? 0),
-            ) /
-            snap.docs.length;
+                0,
+                (total, doc) => total + ((doc.data()['rating'] as num?) ?? 0),
+              ) /
+              snap.docs.length;
 
-    await FirebaseFirestore.instance
-        .collection('places')
-        .doc(_placeId)
-        .update({'averageRating': average});
+    await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
+      'averageRating': average,
+    });
   }
 
   void _startEditing(String reviewId, String text, int rating) {
@@ -216,9 +215,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _formatTimestamp(dynamic value) {
@@ -298,11 +297,12 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           children: [
             PageView.builder(
               itemCount: images.length,
-              itemBuilder: (_, i) => CachedNetworkImage(
+              itemBuilder: (context, i) => CachedNetworkImage(
                 imageUrl: images[i],
                 fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: Colors.grey[300]),
-                errorWidget: (_, __, ___) => Container(
+                placeholder: (context, url) =>
+                    Container(color: Colors.grey[300]),
+                errorWidget: (context, url, error) => Container(
                   color: Colors.grey[300],
                   child: const Icon(Icons.broken_image),
                 ),
@@ -327,8 +327,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 bottom: 16,
                 right: 16,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(12),
@@ -344,8 +346,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 bottom: 20,
                 left: 20,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber,
                     borderRadius: BorderRadius.circular(20),
@@ -475,8 +479,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
               Text(
                 canReview
                     ? _editingReviewId != null
-                        ? 'Edit your review'
-                        : 'Leave a review'
+                          ? 'Edit your review'
+                          : 'Leave a review'
                     : 'Login required for reviews',
                 style: GoogleFonts.inter(
                   fontWeight: FontWeight.w600,
@@ -529,8 +533,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                     ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed:
-                        !canReview || _isSubmittingReview ? null : _submitReview,
+                    onPressed: !canReview || _isSubmittingReview
+                        ? null
+                        : _submitReview,
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -589,14 +594,17 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 final data = doc.data() as Map<String, dynamic>;
                 final isOwner = data['userId'] == _uid;
                 final rating = (data['rating'] as num?)?.toInt() ?? 0;
-                final displayName = ((data['userName'] as String?) ?? '').trim();
+                final displayName = ((data['userName'] as String?) ?? '')
+                    .trim();
                 final email = ((data['userEmail'] as String?) ?? '').trim();
                 final label = displayName.isNotEmpty
                     ? displayName
                     : email.isNotEmpty
-                        ? email
-                        : 'Anonymous';
-                final date = _formatTimestamp(data['updatedAt'] ?? data['createdAt']);
+                    ? email
+                    : 'Anonymous';
+                final date = _formatTimestamp(
+                  data['updatedAt'] ?? data['createdAt'],
+                );
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -676,8 +684,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                                   _confirmDeleteReview(doc.id);
                                 }
                               },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: Text('Edit'),
+                                ),
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: Text(

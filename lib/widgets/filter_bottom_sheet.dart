@@ -81,8 +81,9 @@ class FilterBottomSheet extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: availableCategories.map((category) {
-                  final isSelected =
-                      searchProvider.selectedCategories.contains(category);
+                  final isSelected = searchProvider.selectedCategories.contains(
+                    category,
+                  );
 
                   // Fix #3 – A category matched by the user's saved preferences
                   // is shown with a secondary tint so the user can see which
@@ -109,11 +110,12 @@ class FilterBottomSheet extends StatelessWidget {
                     ),
                     selected: isSelected,
                     onSelected: (_) => searchProvider.toggleCategory(category),
-                    selectedColor:
-                        Theme.of(context).primaryColor.withOpacity(0.2),
+                    selectedColor: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.2),
                     checkmarkColor: Theme.of(context).primaryColor,
                     backgroundColor: isPreferred
-                        ? Colors.pink.withOpacity(0.07)
+                        ? Colors.pink.withValues(alpha: 0.07)
                         : Colors.grey[100],
                     labelStyle: GoogleFonts.inter(
                       color: isSelected
@@ -132,7 +134,11 @@ class FilterBottomSheet extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.favorite, size: 12, color: Colors.pinkAccent),
+                    const Icon(
+                      Icons.favorite,
+                      size: 12,
+                      color: Colors.pinkAccent,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'Matches your preferences',

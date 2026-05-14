@@ -18,9 +18,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Register background handler BEFORE runApp
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -43,10 +41,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          cardColor: Colors.white,
-        ),
+        theme: ThemeData(primarySwatch: Colors.blue, cardColor: Colors.white),
         home: const AuthWrapper(),
       ),
     );
@@ -73,14 +68,16 @@ class AuthWrapper extends StatelessWidget {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      if (!context.mounted) return;
       context.read<SearchProvider>().setUserPreferences(const []);
       return;
     }
 
     final data = snapshot.data() ?? {};
-    context
-        .read<SearchProvider>()
-        .setUserPreferences(List<String>.from(data['preferences'] ?? []));
+    if (!context.mounted) return;
+    context.read<SearchProvider>().setUserPreferences(
+      List<String>.from(data['preferences'] ?? []),
+    );
   }
 
   @override
@@ -212,11 +209,11 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
-      final credential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: _passwordController.text.trim(),
-      );
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: email,
+            password: _passwordController.text.trim(),
+          );
 
       final user = credential.user!;
       await user.updateDisplayName(name);
@@ -244,8 +241,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty || _validateEmail(email) != null) {
-      _setMessage('Enter your email first, then tap Forgot password.',
-          isError: true);
+      _setMessage(
+        'Enter your email first, then tap Forgot password.',
+        isError: true,
+      );
       return;
     }
 
@@ -314,22 +313,25 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.explore_rounded, size: 64, color: Colors.blue),
+                  const Icon(
+                    Icons.explore_rounded,
+                    size: 64,
+                    color: Colors.blue,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'LikeALocal',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _isLogin ? 'Welcome back!' : 'Create your account',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: Colors.grey[600]),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 36),
                   if (!_isLogin) ...[
@@ -372,9 +374,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: 'Password',
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
                         onPressed: () => setState(
                           () => _obscurePassword = !_obscurePassword,
                         ),
@@ -415,7 +419,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: _isError ? Colors.red[50] : Colors.green[50],
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _isError ? Colors.red[200]! : Colors.green[200]!,
+                          color: _isError
+                              ? Colors.red[200]!
+                              : Colors.green[200]!,
                         ),
                       ),
                       child: Text(
@@ -432,7 +438,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : (_isLogin ? _login : _signup),
+                      onPressed: _isLoading
+                          ? null
+                          : (_isLogin ? _login : _signup),
                       style: ElevatedButton.styleFrom(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -463,11 +471,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isLoading
                         ? null
                         : () => setState(() {
-                              _isLogin = !_isLogin;
-                              _message = '';
-                              _isError = false;
-                              _formKey.currentState?.reset();
-                            }),
+                            _isLogin = !_isLogin;
+                            _message = '';
+                            _isError = false;
+                            _formKey.currentState?.reset();
+                          }),
                     child: Text(
                       _isLogin
                           ? "Don't have an account? Sign Up"

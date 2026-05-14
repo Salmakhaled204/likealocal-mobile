@@ -30,38 +30,43 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   final List<ChatMessage> _messages = [];
 
-  // Keeps the full conversation history to send to the API for context
+  // keeps conversation history for context
   final List<Map<String, String>> _conversationHistory = [];
 
   bool _isLoading = false;
 
-  // ── IMPORTANT: Replace with your actual API key ──────────────────────────
-  // In production, NEVER hardcode API keys. Use --dart-define or a backend
-  // proxy instead. For the project demo this is acceptable.
-  static const String _apiKey = 'AIzaSyBZqlt0M8oiW0QqywJsRPVocbxK6s9XeIU';
+  // ── Gemini API settings ─────────────────────────────────────────────────────
+  // Paste your Gemini API key here between the quotes.
+  static const String _apiKey = 'AIzaSyAJiB16C9K1Pc2a4f4vD57K7EN4-8kOQOM';
+
+  // Current Gemini Flash model
+  static const String _modelName = 'gemini-2.5-flash';
 
   static const String _systemPrompt = '''
 You are LikeALocal's friendly travel assistant. You help users discover authentic local places, hidden gems, restaurants, cafes, and experiences in cities around the world — especially in Cairo, Egypt.
 
 You can:
-- Recommend places based on budget (cheap, medium, expensive), atmosphere (quiet, fun, family, friends, romantic), and category (restaurants, cafes, hidden gems, nightlife, experiences)
+- Recommend places based on budget, atmosphere, and category
 - Give local tips and travel advice
 - Suggest what to order or do at specific places
 - Help users understand how to use the LikeALocal app
 - Answer questions about neighbourhoods, best times to visit, and local culture
 
-Keep responses friendly, concise, and practical. Use bullet points for lists. Always feel free to ask follow-up questions to give better recommendations.
+Keep responses friendly, concise, and practical. Use bullet points for lists. Ask follow-up questions only when needed.
 ''';
 
   @override
   void initState() {
     super.initState();
-    // Show a welcome message immediately
-    _messages.add(ChatMessage(
-      text: "Hi! I'm your LikeALocal assistant 🗺️\n\nAsk me anything — best cheap restaurants, hidden gems near you, what to do tonight, or tips for exploring like a local!",
-      isUser: false,
-      timestamp: DateTime.now(),
-    ));
+
+    _messages.add(
+      ChatMessage(
+        text:
+            "Hi! I'm your LikeALocal assistant 🗺️\n\nAsk me anything — best cheap restaurants, hidden gems near you, what to do tonight, or tips for exploring like a local!",
+        isUser: false,
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   @override
@@ -85,57 +90,169 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
 
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
+
     if (text.isEmpty || _isLoading) return;
 
-    // Add user message to UI
+    // correct key check
+    if (_apiKey == 'PASTE_YOUR_KEY_HERE' || _apiKey.trim().isEmpty) {
+      _addErrorMessage(
+        'Gemini API key is missing. Please paste your API key in the code first.',
+      );
+      return;
+    }
+
     setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true, timestamp: DateTime.now()));
+      _messages.add(
+        ChatMessage(text: text, isUser: true, timestamp: DateTime.now()),
+      );
+
       _conversationHistory.add({'role': 'user', 'content': text});
+
       _isLoading = true;
     });
+
     _inputController.clear();
     _scrollToBottom();
 
     try {
+      // keep only recent messages to reduce token usage
+      final recentHistory = _conversationHistory.length > 8
+          ? _conversationHistory.sublist(_conversationHistory.length - 8)
+          : _conversationHistory;
+
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/$_modelName:generateContent',
+      );
+
       final response = await http.post(
-        Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$_apiKey',
-        ),
-        headers: {'Content-Type': 'application/json'},
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': _apiKey,
+        },
         body: jsonEncode({
-          'contents': _conversationHistory.map((m) => {
-            'role': m['role'] == 'assistant' ? 'model' : 'user',
-            'parts': [{'text': m['content']}],
-          }).toList(),
-          'generationConfig': {
-            'maxOutputTokens': 1024,
-            'temperature': 0.7,
+          'system_instruction': {
+            'parts': [
+              {'text': _systemPrompt},
+            ],
           },
+          'contents': recentHistory.map((message) {
+            return {
+              'role': message['role'] == 'assistant' ? 'model' : 'user',
+              'parts': [
+                {'text': message['content'] ?? ''},
+              ],
+            };
+          }).toList(),
+          'generationConfig': {'maxOutputTokens': 500, 'temperature': 0.7},
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final reply = data['candidates'][0]['content']['parts'][0]['text'] as String;
+
+        final candidates = data['candidates'] as List<dynamic>?;
+        final firstCandidate = candidates?.isNotEmpty == true
+            ? candidates!.first as Map<String, dynamic>
+            : null;
+        final content = firstCandidate?['content'] as Map<String, dynamic>?;
+        final parts = content?['parts'] as List<dynamic>?;
+        final firstPart = parts?.isNotEmpty == true
+            ? parts!.first as Map<String, dynamic>
+            : null;
+        final reply = firstPart?['text'];
+
+        final finalReply = reply == null || reply.toString().trim().isEmpty
+            ? _emptyResponseMessage(data)
+            : reply.toString();
 
         setState(() {
-          _messages.add(ChatMessage(text: reply, isUser: false, timestamp: DateTime.now()));
-          _conversationHistory.add({'role': 'assistant', 'content': reply});
+          _messages.add(
+            ChatMessage(
+              text: finalReply,
+              isUser: false,
+              timestamp: DateTime.now(),
+            ),
+          );
+
+          _conversationHistory.add({
+            'role': 'assistant',
+            'content': finalReply,
+          });
         });
       } else {
-        _addErrorMessage('Error ${response.statusCode}: ${response.body}');
+        _handleApiError(response.statusCode, response.body);
       }
     } catch (e) {
-      _addErrorMessage('Exception: ${e.toString()}');
+      _addErrorMessage(
+        'Something went wrong. Please check your internet connection and try again.',
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+
       _scrollToBottom();
     }
   }
 
+  void _handleApiError(int statusCode, String body) {
+    String cleanMessage = 'Something went wrong. Please try again.';
+
+    try {
+      final data = jsonDecode(body);
+      final errorMessage = data['error']?['message']?.toString() ?? '';
+
+      if (statusCode == 429 || errorMessage.toLowerCase().contains('quota')) {
+        cleanMessage =
+            'Gemini API limit reached. Please wait 1 minute and try again.\n\nIf it keeps happening, your API key has no free quota left. Create a new key or enable billing.';
+      } else if (statusCode == 400) {
+        cleanMessage =
+            'Bad request. Please check the API request format and try again.';
+      } else if (statusCode == 403) {
+        cleanMessage =
+            'API key problem. Please check that your Gemini API key is correct and enabled.';
+      } else if (statusCode == 404) {
+        cleanMessage =
+            'Model not found. Change _modelName to another Gemini model, for example gemini-2.5-flash.';
+      } else {
+        cleanMessage = 'Error $statusCode: $errorMessage';
+      }
+    } catch (_) {
+      cleanMessage = 'Error $statusCode. Please try again.';
+    }
+
+    _addErrorMessage(cleanMessage);
+  }
+
+  String _emptyResponseMessage(Map<String, dynamic> data) {
+    final promptFeedback = data['promptFeedback'] as Map<String, dynamic>?;
+    final blockReason = promptFeedback?['blockReason']?.toString();
+    if (blockReason != null && blockReason.isNotEmpty) {
+      return 'Gemini blocked this message ($blockReason). Try asking in a different way.';
+    }
+
+    final candidates = data['candidates'] as List<dynamic>?;
+    final firstCandidate = candidates?.isNotEmpty == true
+        ? candidates!.first as Map<String, dynamic>
+        : null;
+    final finishReason = firstCandidate?['finishReason']?.toString();
+    if (finishReason != null && finishReason.isNotEmpty) {
+      return 'Gemini returned no text ($finishReason). Try again with a shorter question.';
+    }
+
+    return 'Gemini returned no response. Please try again.';
+  }
+
   void _addErrorMessage(String text) {
+    if (!mounted) return;
+
     setState(() {
-      _messages.add(ChatMessage(text: text, isUser: false, timestamp: DateTime.now()));
+      _messages.add(
+        ChatMessage(text: text, isUser: false, timestamp: DateTime.now()),
+      );
     });
   }
 
@@ -143,6 +260,21 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  void _clearChat() {
+    setState(() {
+      _messages.clear();
+      _conversationHistory.clear();
+
+      _messages.add(
+        ChatMessage(
+          text: "Chat cleared! Ask me anything about local places 🗺️",
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
   }
 
   @override
@@ -158,7 +290,11 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
             CircleAvatar(
               radius: 18,
               backgroundColor: Colors.blue[600],
-              child: const Icon(Icons.explore_rounded, color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.explore_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
             const SizedBox(width: 10),
             Column(
@@ -187,21 +323,10 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.grey),
             tooltip: 'Clear chat',
-            onPressed: () {
-              setState(() {
-                _messages.clear();
-                _conversationHistory.clear();
-                _messages.add(ChatMessage(
-                  text: "Chat cleared! Ask me anything about local places 🗺️",
-                  isUser: false,
-                  timestamp: DateTime.now(),
-                ));
-              });
-            },
+            onPressed: _clearChat,
           ),
         ],
       ),
-
       body: Column(
         children: [
           // ── Suggestion chips ────────────────────────────────────────────
@@ -236,7 +361,8 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
                   _SuggestionChip(
                     label: '🌙 Nightlife',
                     onTap: () {
-                      _inputController.text = 'What to do tonight for nightlife?';
+                      _inputController.text =
+                          'What to do tonight for nightlife?';
                       _sendMessage();
                     },
                   ),
@@ -252,11 +378,12 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
-                // Typing indicator
                 if (index == _messages.length) {
                   return const _TypingIndicator();
                 }
+
                 final msg = _messages[index];
+
                 return _MessageBubble(
                   message: msg,
                   timeString: _formatTime(msg.timestamp),
@@ -289,7 +416,10 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. Al
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
                         hintText: 'Ask about local places…',
-                        hintStyle: GoogleFonts.inter(color: Colors.grey[500], fontSize: 14),
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey[500],
+                          fontSize: 14,
+                        ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -337,26 +467,38 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
             CircleAvatar(
               radius: 16,
               backgroundColor: Colors.blue[600],
-              child: const Icon(Icons.explore_rounded, color: Colors.white, size: 14),
+              child: const Icon(
+                Icons.explore_rounded,
+                color: Colors.white,
+                size: 14,
+              ),
             ),
             const SizedBox(width: 8),
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isUser
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: isUser ? Colors.blue[600] : Colors.white,
                     borderRadius: BorderRadius.only(
@@ -400,7 +542,7 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-// ── Typing indicator (animated dots) ─────────────────────────────────────────
+// ── Typing indicator ──────────────────────────────────────────────────────────
 class _TypingIndicator extends StatefulWidget {
   const _TypingIndicator();
 
@@ -415,6 +557,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   @override
   void initState() {
     super.initState();
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -436,7 +579,11 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           CircleAvatar(
             radius: 16,
             backgroundColor: Colors.blue[600],
-            child: const Icon(Icons.explore_rounded, color: Colors.white, size: 14),
+            child: const Icon(
+              Icons.explore_rounded,
+              color: Colors.white,
+              size: 14,
+            ),
           ),
           const SizedBox(width: 8),
           Container(
@@ -459,13 +606,17 @@ class _TypingIndicatorState extends State<_TypingIndicator>
             ),
             child: AnimatedBuilder(
               animation: _controller,
-              builder: (_, __) {
+              builder: (context, child) {
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: List.generate(3, (i) {
                     final delay = i / 3;
                     final value = (_controller.value - delay).abs();
-                    final opacity = (1 - (value * 3).clamp(0.0, 1.0)).clamp(0.3, 1.0);
+                    final opacity = (1 - (value * 3).clamp(0.0, 1.0)).clamp(
+                      0.3,
+                      1.0,
+                    );
+
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 3),
                       width: 8,

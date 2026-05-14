@@ -30,7 +30,10 @@ class ChatListScreen extends StatelessWidget {
         iconTheme: const IconThemeData(color: Colors.black),
         title: Text(
           'Messages',
-          style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.bold),
+          style: GoogleFonts.inter(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -46,8 +49,10 @@ class ChatListScreen extends StatelessWidget {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('Could not load messages.',
-                  style: GoogleFonts.inter(color: Colors.red)),
+              child: Text(
+                'Could not load messages.',
+                style: GoogleFonts.inter(color: Colors.red),
+              ),
             );
           }
 
@@ -58,16 +63,26 @@ class ChatListScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.chat_bubble_outline_rounded, size: 72, color: Colors.grey[300]),
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 72,
+                    color: Colors.grey[300],
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'No conversations yet',
-                    style: GoogleFonts.inter(color: Colors.grey[500], fontSize: 16),
+                    style: GoogleFonts.inter(
+                      color: Colors.grey[500],
+                      fontSize: 16,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Start a chat from a place\'s details screen',
-                    style: GoogleFonts.inter(color: Colors.grey[400], fontSize: 13),
+                    style: GoogleFonts.inter(
+                      color: Colors.grey[400],
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -76,13 +91,16 @@ class ChatListScreen extends StatelessWidget {
 
           return ListView.separated(
             itemCount: docs.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+            separatorBuilder: (context, index) =>
+                const Divider(height: 1, indent: 72),
             itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
               final chatId = docs[index].id;
 
               // Find the other participant's info
-              final participants = List<String>.from(data['participants'] ?? []);
+              final participants = List<String>.from(
+                data['participants'] ?? [],
+              );
               final otherId = participants.firstWhere(
                 (id) => id != _uid,
                 orElse: () => '',
@@ -93,7 +111,10 @@ class ChatListScreen extends StatelessWidget {
               final unreadCount = (data['unreadCount_$_uid'] ?? 0) as int;
 
               return ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 leading: CircleAvatar(
                   radius: 26,
                   backgroundColor: Colors.blue[100],
@@ -113,7 +134,9 @@ class ChatListScreen extends StatelessWidget {
                       child: Text(
                         otherName,
                         style: GoogleFonts.inter(
-                          fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.w600,
+                          fontWeight: unreadCount > 0
+                              ? FontWeight.bold
+                              : FontWeight.w600,
                           fontSize: 15,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -123,7 +146,9 @@ class ChatListScreen extends StatelessWidget {
                       _formatTime(lastTime),
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: unreadCount > 0 ? Colors.blue[600] : Colors.grey[400],
+                        color: unreadCount > 0
+                            ? Colors.blue[600]
+                            : Colors.grey[400],
                       ),
                     ),
                   ],
@@ -135,8 +160,12 @@ class ChatListScreen extends StatelessWidget {
                         lastMessage,
                         style: GoogleFonts.inter(
                           fontSize: 13,
-                          color: unreadCount > 0 ? Colors.black87 : Colors.grey[500],
-                          fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+                          color: unreadCount > 0
+                              ? Colors.black87
+                              : Colors.grey[500],
+                          fontWeight: unreadCount > 0
+                              ? FontWeight.w500
+                              : FontWeight.normal,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -145,14 +174,20 @@ class ChatListScreen extends StatelessWidget {
                     if (unreadCount > 0) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.blue[600],
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '$unreadCount',
-                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ],

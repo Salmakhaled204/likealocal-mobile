@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../providers/home_provider.dart';
-import '../providers/search_provider.dart';
 import '../models/place.dart';
 import '../widgets/place_card.dart';
 import '../widgets/shimmer_loading.dart';
@@ -52,10 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -184,17 +180,19 @@ class _HomeTab extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const ProfileScreen()),
+                            builder: (_) => const ProfileScreen(),
+                          ),
                         ),
                         child: CircleAvatar(
                           radius: 22,
                           backgroundColor: Colors.blue[100],
-                          backgroundImage: user?.photoURL != null &&
+                          backgroundImage:
+                              user?.photoURL != null &&
                                   user!.photoURL!.isNotEmpty
                               ? NetworkImage(user.photoURL!)
                               : null,
-                          child: user?.photoURL == null ||
-                                  user!.photoURL!.isEmpty
+                          child:
+                              user?.photoURL == null || user!.photoURL!.isEmpty
                               ? Text(
                                   firstName.isNotEmpty
                                       ? firstName[0].toUpperCase()
@@ -236,7 +234,9 @@ class _HomeTab extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.blue[50],
                                     borderRadius: BorderRadius.circular(20),
@@ -261,12 +261,10 @@ class _HomeTab extends StatelessWidget {
                           )
                         else if (homeProvider.recommendations.isEmpty)
                           Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Text(
                               'No recommendations yet.',
-                              style: GoogleFonts.inter(
-                                  color: Colors.grey[500]),
+                              style: GoogleFonts.inter(color: Colors.grey[500]),
                             ),
                           )
                         else
@@ -274,10 +272,10 @@ class _HomeTab extends StatelessWidget {
                             height: 220,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount:
-                                  homeProvider.recommendations.length,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              itemCount: homeProvider.recommendations.length,
                               itemBuilder: (context, index) {
                                 final place =
                                     homeProvider.recommendations[index];
@@ -326,19 +324,20 @@ class _HomeTab extends StatelessWidget {
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           children: [
-                            Icon(Icons.wifi_off_rounded,
-                                size: 64, color: Colors.grey[300]),
+                            Icon(
+                              Icons.wifi_off_rounded,
+                              size: 64,
+                              color: Colors.grey[300],
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               homeProvider.errorMessage!,
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                  color: Colors.red[700]),
+                              style: GoogleFonts.inter(color: Colors.red[700]),
                             ),
                             const SizedBox(height: 16),
                             ElevatedButton(
-                              onPressed: () =>
-                                  homeProvider.fetchPlaces(),
+                              onPressed: () => homeProvider.fetchPlaces(),
                               child: const Text('Retry'),
                             ),
                           ],
@@ -354,15 +353,19 @@ class _HomeTab extends StatelessWidget {
                           padding: const EdgeInsets.all(40),
                           child: Column(
                             children: [
-                              Icon(Icons.explore_outlined,
-                                  size: 72, color: Colors.grey[300]),
+                              Icon(
+                                Icons.explore_outlined,
+                                size: 72,
+                                color: Colors.grey[300],
+                              ),
                               const SizedBox(height: 12),
                               Text(
                                 'No places yet.\nBe the first to add one!',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.inter(
-                                    color: Colors.grey[500],
-                                    fontSize: 15),
+                                  color: Colors.grey[500],
+                                  fontSize: 15,
+                                ),
                               ),
                             ],
                           ),
@@ -372,25 +375,20 @@ class _HomeTab extends StatelessWidget {
                   }
 
                   return SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        // Bottom padding after last item
-                        if (index == homeProvider.places.length) {
-                          return const SizedBox(height: 100);
-                        }
-                        final place = homeProvider.places[index];
-                        return Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 16),
-                          child: PlaceCard(
-                            place: place,
-                            onTap: () =>
-                                _navigateToDetails(context, place),
-                          ),
-                        );
-                      },
-                      childCount: homeProvider.places.length + 1,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      // Bottom padding after last item
+                      if (index == homeProvider.places.length) {
+                        return const SizedBox(height: 100);
+                      }
+                      final place = homeProvider.places[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PlaceCard(
+                          place: place,
+                          onTap: () => _navigateToDetails(context, place),
+                        ),
+                      );
+                    }, childCount: homeProvider.places.length + 1),
                   );
                 },
               ),
@@ -409,10 +407,7 @@ class _HorizontalPlaceCard extends StatelessWidget {
   final Place place;
   final VoidCallback onTap;
 
-  const _HorizontalPlaceCard({
-    required this.place,
-    required this.onTap,
-  });
+  const _HorizontalPlaceCard({required this.place, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -437,15 +432,17 @@ class _HorizontalPlaceCard extends StatelessWidget {
           children: [
             // Image
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               child: place.imageUrls.isNotEmpty
                   ? Image.network(
                       place.imageUrls.first,
                       height: 120,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholderImage(),
+                      errorBuilder: (context, error, stackTrace) =>
+                          _placeholderImage(),
                     )
                   : _placeholderImage(),
             ),
@@ -467,14 +464,18 @@ class _HorizontalPlaceCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.star_rounded,
-                          color: Colors.amber, size: 14),
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.amber,
+                        size: 14,
+                      ),
                       const SizedBox(width: 3),
                       Text(
                         place.averageRating.toStringAsFixed(1),
                         style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(width: 6),
                       Expanded(

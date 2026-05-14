@@ -80,7 +80,9 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       Position pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
 
       setState(() {
@@ -115,12 +117,16 @@ class _MapScreenState extends State<MapScreen> {
       final geoA = a['location'] as GeoPoint;
       final geoB = b['location'] as GeoPoint;
       double distA = Geolocator.distanceBetween(
-        myLocation!.latitude, myLocation!.longitude,
-        geoA.latitude, geoA.longitude,
+        myLocation!.latitude,
+        myLocation!.longitude,
+        geoA.latitude,
+        geoA.longitude,
       );
       double distB = Geolocator.distanceBetween(
-        myLocation!.latitude, myLocation!.longitude,
-        geoB.latitude, geoB.longitude,
+        myLocation!.latitude,
+        myLocation!.longitude,
+        geoB.latitude,
+        geoB.longitude,
       );
       return distA.compareTo(distB);
     });
@@ -170,14 +176,19 @@ class _MapScreenState extends State<MapScreen> {
                             : '${(distMetres / 1000).toStringAsFixed(1)} km away';
 
                         return ListTile(
-                          leading: const Icon(Icons.place, color: Colors.orange),
+                          leading: const Icon(
+                            Icons.place,
+                            color: Colors.orange,
+                          ),
                           title: Text(place['title'] ?? 'Unnamed'),
                           subtitle: Text(distText),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () {
                             Navigator.pop(context);
                             _mapController.move(
-                                LatLng(geo.latitude, geo.longitude), 16.0);
+                              LatLng(geo.latitude, geo.longitude),
+                              16.0,
+                            );
                             setState(() => selectedPlace = place);
                           },
                         );
@@ -191,8 +202,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _showSnackbar(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── Build place markers ───────────────────────────────────
@@ -228,7 +238,7 @@ class _MapScreenState extends State<MapScreen> {
             border: Border.all(color: Colors.white, width: 3),
             boxShadow: [
               BoxShadow(
-                color: Colors.blue.withOpacity(0.4),
+                color: Colors.blue.withValues(alpha: 0.4),
                 blurRadius: 8,
                 spreadRadius: 4,
               ),
@@ -265,19 +275,18 @@ class _MapScreenState extends State<MapScreen> {
       ),
       body: Stack(
         children: [
-
           // ── Map ───────────────────────────────────────
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: myLocation ?? defaultCenter,
               initialZoom: 12.0,
-              onTap: (_, __) => setState(() => selectedPlace = null),
+              onTap: (tapPosition, point) =>
+                  setState(() => selectedPlace = null),
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.likealocal_mobile',
               ),
               MarkerLayer(markers: _buildPlaceMarkers()),
@@ -286,8 +295,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
 
           // ── Loading spinner ───────────────────────────
-          if (isLoadingPlaces)
-            const Center(child: CircularProgressIndicator()),
+          if (isLoadingPlaces) const Center(child: CircularProgressIndicator()),
 
           // ── Selected place card ───────────────────────
           if (selectedPlace != null)
@@ -309,7 +317,9 @@ class _MapScreenState extends State<MapScreen> {
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
               )
             : const Icon(Icons.my_location),
       ),
@@ -323,8 +333,10 @@ class _MapScreenState extends State<MapScreen> {
     String distText = '';
     if (myLocation != null) {
       double dist = Geolocator.distanceBetween(
-        myLocation!.latitude, myLocation!.longitude,
-        geo.latitude, geo.longitude,
+        myLocation!.latitude,
+        myLocation!.longitude,
+        geo.latitude,
+        geo.longitude,
       );
       distText = dist < 1000
           ? '${dist.toStringAsFixed(0)} m away'
@@ -345,7 +357,9 @@ class _MapScreenState extends State<MapScreen> {
                   child: Text(
                     place['title'] ?? 'Unnamed',
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 GestureDetector(
@@ -359,7 +373,9 @@ class _MapScreenState extends State<MapScreen> {
               Text(
                 place['category'],
                 style: const TextStyle(
-                    color: Colors.orange, fontWeight: FontWeight.w500),
+                  color: Colors.orange,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
             if ((place['description'] ?? '').toString().isNotEmpty) ...[
@@ -375,12 +391,16 @@ class _MapScreenState extends State<MapScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(Icons.directions_walk,
-                      size: 14, color: Colors.blue),
+                  const Icon(
+                    Icons.directions_walk,
+                    size: 14,
+                    color: Colors.blue,
+                  ),
                   const SizedBox(width: 4),
-                  Text(distText,
-                      style: const TextStyle(
-                          color: Colors.blue, fontSize: 13)),
+                  Text(
+                    distText,
+                    style: const TextStyle(color: Colors.blue, fontSize: 13),
+                  ),
                 ],
               ),
             ],
