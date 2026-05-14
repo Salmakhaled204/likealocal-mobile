@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -28,7 +29,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   String _budget = 'Medium';
   String _atmosphere = 'Friends';
 
-  final List<String> _categories = ['Restaurants','Hidden Gems','Experiences','Cafes','Nightlife','Museum','Shopping','Other'];
+  final List<String> _categories = ['Restaurants', 'Hidden Gems', 'Experiences', 'Cafes', 'Nightlife', 'Museum', 'Shopping', 'Other'];
   final List<String> _budgets = ['Cheap', 'Medium', 'Expensive'];
   final List<String> _atmospheres = ['Quiet', 'Fun', 'Family', 'Friends', 'Romantic'];
 
@@ -39,6 +40,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   bool _isDetectingLocation = false;
   bool _isSaving = false;
   String? _error;
+
+  // Upload progress tracking
+  int _uploadedCount = 0;
 
   @override
   void dispose() {
@@ -146,6 +150,33 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     );
   }
 
+  // ── Upload all selected images to Firebase Storage ──────────────────────
+  Future<List<String>> _uploadImages(String placeId) async {
+    final List<String> urls = [];
+    setState(() => _uploadedCount = 0);
+
+    for (int i = 0; i < _selectedImages.length; i++) {
+      final file = File(_selectedImages[i].path);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('places/$placeId/$fileName');
+
+      final uploadTask = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      urls.add(downloadUrl);
+
+      // Update progress counter so UI shows "Uploading 2/3…"
+      setState(() => _uploadedCount = i + 1);
+    }
+
+    return urls;
+  }
+
   Future<void> _savePlace() async {
     if (!_formKey.currentState!.validate()) return;
     if (_pickedLocation == null) { setState(() => _error = 'Please select the place location.'); return; }
@@ -154,13 +185,15 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) { setState(() => _error = 'You must be logged in.'); return; }
 
-    setState(() { _isSaving = true; _error = null; });
+    setState(() { _isSaving = true; _error = null; _uploadedCount = 0; });
+
     try {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final isSuperUser = userDoc.data()?['isSuperUser'] == true;
-      final userName = userDoc.data()?['name'] ?? 'Anonymous';
+      final userName = userDoc.data()?['displayName'] ?? 'Anonymous';
 
-      await FirebaseFirestore.instance.collection('places').add({
+      // Step 1: Create the Firestore document first to get an auto-generated ID
+      final docRef = await FirebaseFirestore.instance.collection('places').add({
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'category': _category,
@@ -169,7 +202,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'localTip': _localTipController.text.trim(),
         'recommendedDish': _recommendedDishController.text.trim(),
         'address': _addressController.text.trim(),
-        'imageUrls': <String>[],
+        'imageUrls': <String>[],   // placeholder — updated after upload
         'videoUrls': <String>[],
         'location': GeoPoint(_pickedLocation!.latitude, _pickedLocation!.longitude),
         'createdBy': user.uid,
@@ -182,14 +215,25 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid)
+      // Step 2: Upload images using the document ID as the storage folder
+      final imageUrls = await _uploadImages(docRef.id);
+
+      // Step 3: Update the document with the real download URLs
+      await docRef.update({'imageUrls': imageUrls});
+
+      // Step 4: Increment contribution count on the user's profile
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
           .update({'contributionCount': FieldValue.increment(1)});
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Place added successfully! 🎉')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Place added successfully! 🎉')),
+      );
       Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Failed to add place. Please try again.');
+      if (mounted) setState(() => _error = 'Failed to add place: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -269,25 +313,37 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
               TextFormField(
                 controller: _addressController,
                 validator: (v) => _required(v, 'address'),
-                decoration: const InputDecoration(labelText: 'Address *', border: OutlineInputBorder(), hintText: 'e.g. Zamalek, Cairo, Egypt'),
+                decoration: const InputDecoration(
+                  labelText: 'Address *',
+                  border: OutlineInputBorder(),
+                  hintText: 'e.g. Zamalek, Cairo, Egypt',
+                ),
               ),
               const SizedBox(height: 14),
 
               // Local Tip
               TextFormField(
                 controller: _localTipController,
-                decoration: const InputDecoration(labelText: 'Local Tip (optional)', border: OutlineInputBorder(), hintText: 'e.g. Go before sunset'),
+                decoration: const InputDecoration(
+                  labelText: 'Local Tip (optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'e.g. Go before sunset',
+                ),
               ),
               const SizedBox(height: 14),
 
               // Recommended Dish
               TextFormField(
                 controller: _recommendedDishController,
-                decoration: const InputDecoration(labelText: 'Recommended Dish / Activity (optional)', border: OutlineInputBorder(), hintText: 'e.g. Try their koshary!'),
+                decoration: const InputDecoration(
+                  labelText: 'Recommended Dish / Activity (optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'e.g. Try their koshary!',
+                ),
               ),
               const SizedBox(height: 20),
 
-              // Images
+              // ── Images ───────────────────────────────────────────────────
               const Text('Photos (at least 1 required)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 8),
               if (_selectedImages.isNotEmpty)
@@ -303,14 +359,21 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                           width: 90, height: 90,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
-                            image: DecorationImage(image: FileImage(File(_selectedImages[i].path)), fit: BoxFit.cover),
+                            image: DecorationImage(
+                              image: FileImage(File(_selectedImages[i].path)),
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                         Positioned(
                           top: 2, right: 10,
                           child: GestureDetector(
-                            onTap: () => setState(() => _selectedImages.removeAt(i)),
-                            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
+                            onTap: _isSaving ? null : () => setState(() => _selectedImages.removeAt(i)),
+                            child: const CircleAvatar(
+                              radius: 10,
+                              backgroundColor: Colors.red,
+                              child: Icon(Icons.close, size: 12, color: Colors.white),
+                            ),
                           ),
                         ),
                       ]);
@@ -319,22 +382,30 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: _selectedImages.length >= 5 ? null : _pickImages,
+                onPressed: (_selectedImages.length >= 5 || _isSaving) ? null : _pickImages,
                 icon: const Icon(Icons.photo_library),
-                label: const Text('Pick Images from Gallery'),
+                label: Text('Pick Images from Gallery (${_selectedImages.length}/5)'),
               ),
               const SizedBox(height: 20),
 
-              // Location
+              // ── Location ─────────────────────────────────────────────────
               const Text('Location *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 10),
               if (_pickedLocation != null)
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.green.shade200)),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
                   child: Row(children: [
-                    const Icon(Icons.location_on, color: Colors.green), const SizedBox(width: 8),
-                    Text('Lat: ${_pickedLocation!.latitude.toStringAsFixed(5)}\nLng: ${_pickedLocation!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 13)),
+                    const Icon(Icons.location_on, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Lat: ${_pickedLocation!.latitude.toStringAsFixed(5)}\nLng: ${_pickedLocation!.longitude.toStringAsFixed(5)}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
                   ]),
                 ),
               const SizedBox(height: 8),
@@ -343,7 +414,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                   : SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _detectLocation,
+                        onPressed: _isSaving ? null : _detectLocation,
                         icon: const Icon(Icons.my_location),
                         label: Text(_pickedLocation == null ? 'Detect My Location (GPS)' : 'Re-detect Location'),
                       ),
@@ -352,29 +423,45 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _openMapPicker,
+                  onPressed: _isSaving ? null : _openMapPicker,
                   icon: const Icon(Icons.map),
                   label: const Text('Select Location on Map'),
                 ),
               ),
               const SizedBox(height: 24),
 
-              // Error
+              // ── Error ────────────────────────────────────────────────────
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!, style: TextStyle(color: Colors.red[700])),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red[200]!),
+                    ),
+                    child: Text(_error!, style: TextStyle(color: Colors.red[700])),
+                  ),
                 ),
 
-              // Submit
+              // ── Submit button ─────────────────────────────────────────────
               SizedBox(
-                width: double.infinity, height: 50,
+                width: double.infinity, height: 54,
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _savePlace,
                   icon: _isSaving
                       ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.add_location_alt),
-                  label: Text(_isSaving ? 'Saving...' : 'Add Place'),
+                  label: Text(
+                    _isSaving
+                        ? _uploadedCount == 0
+                            ? 'Saving place…'
+                            : 'Uploading images ($_uploadedCount/${_selectedImages.length})…'
+                        : 'Add Place',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
               ),
               const SizedBox(height: 30),
