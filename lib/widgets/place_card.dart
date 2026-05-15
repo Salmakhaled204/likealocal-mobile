@@ -7,11 +7,7 @@ class PlaceCard extends StatelessWidget {
   final Place place;
   final VoidCallback onTap;
 
-  const PlaceCard({
-    super.key,
-    required this.place,
-    required this.onTap,
-  });
+  const PlaceCard({super.key, required this.place, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +34,8 @@ class PlaceCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16)),
+                    top: Radius.circular(16),
+                  ),
                   child: CachedNetworkImage(
                     imageUrl: place.imageUrls.isNotEmpty
                         ? place.imageUrls.first
@@ -49,15 +46,12 @@ class PlaceCard extends StatelessWidget {
                     placeholder: (context, url) => Container(
                       height: 180,
                       color: Colors.grey[200],
-                      child: const Center(
-                          child: CircularProgressIndicator()),
+                      child: const Center(child: CircularProgressIndicator()),
                     ),
-                    errorWidget: (context, url, error) =>
-                        Container(
+                    errorWidget: (context, url, error) => Container(
                       height: 180,
                       color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image,
-                          color: Colors.grey),
+                      child: const Icon(Icons.broken_image, color: Colors.grey),
                     ),
                   ),
                 ),
@@ -67,14 +61,15 @@ class PlaceCard extends StatelessWidget {
                     left: 12,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.amber,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(
-                                alpha: 0.2),
+                            color: Colors.black.withValues(alpha: 0.2),
                             blurRadius: 4,
                           ),
                         ],
@@ -82,8 +77,7 @@ class PlaceCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.star,
-                              color: Colors.white, size: 16),
+                          const Icon(Icons.star, color: Colors.white, size: 16),
                           const SizedBox(width: 4),
                           Text(
                             'Super User',
@@ -102,7 +96,9 @@ class PlaceCard extends StatelessWidget {
                   right: 12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(12),
@@ -110,8 +106,11 @@ class PlaceCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star_rounded,
-                            color: Colors.amber, size: 16),
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Colors.amber,
+                          size: 16,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           place.averageRating.toStringAsFixed(1),
@@ -134,8 +133,7 @@ class PlaceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
@@ -150,18 +148,19 @@ class PlaceCard extends StatelessWidget {
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .primaryColor
-                              .withValues(alpha: 0.1),
+                          color: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           place.category,
                           style: GoogleFonts.inter(
-                            color:
-                                Theme.of(context).primaryColor,
+                            color: Theme.of(context).primaryColor,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -179,11 +178,71 @@ class PlaceCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (place.address.isNotEmpty ||
+                      place.budget.isNotEmpty ||
+                      place.atmosphere.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        if (place.address.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.place_outlined,
+                            label: place.address,
+                          ),
+                        if (place.budget.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.payments_outlined,
+                            label: place.budget,
+                          ),
+                        if (place.atmosphere.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.groups_outlined,
+                            label: place.atmosphere,
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _MetaChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 180),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: Colors.grey[600]),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 11, color: Colors.grey[700]),
+            ),
+          ),
+        ],
       ),
     );
   }

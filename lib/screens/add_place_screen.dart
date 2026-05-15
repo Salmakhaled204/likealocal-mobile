@@ -7,9 +7,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../models/place.dart';
 
 class AddPlaceScreen extends StatefulWidget {
-  const AddPlaceScreen({super.key});
+  final Place? placeToEdit;
+
+  const AddPlaceScreen({super.key, this.placeToEdit});
 
   @override
   State<AddPlaceScreen> createState() => _AddPlaceScreenState();
@@ -49,6 +52,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   ];
 
   List<XFile> _selectedImages = [];
+  List<String> _existingImageUrls = [];
   final ImagePicker _picker = ImagePicker();
 
   LatLng? _pickedLocation;
@@ -58,6 +62,28 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   // Upload progress tracking
   int _uploadedCount = 0;
+
+  bool get _isEditing => widget.placeToEdit != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final place = widget.placeToEdit;
+    if (place == null) return;
+
+    _titleController.text = place.title;
+    _descriptionController.text = place.description;
+    _localTipController.text = place.localTip;
+    _recommendedDishController.text = place.recommendedDish;
+    _addressController.text = place.address;
+    _category = place.category.isEmpty ? _category : place.category;
+    _budget = place.budget.isEmpty ? _budget : place.budget;
+    _atmosphere = place.atmosphere.isEmpty ? _atmosphere : place.atmosphere;
+    _pickedLocation = LatLng(place.location.latitude, place.location.longitude);
+    _latitudeController.text = place.location.latitude.toStringAsFixed(6);
+    _longitudeController.text = place.location.longitude.toStringAsFixed(6);
+    _existingImageUrls = List<String>.from(place.imageUrls);
+  }
 
   @override
   void dispose() {
@@ -232,7 +258,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       setState(() => _error = 'Please select the place location.');
       return;
     }
-    if (_selectedImages.isEmpty) {
+    if (_selectedImages.isEmpty && _existingImageUrls.isEmpty) {
       setState(() => _error = 'Please upload at least one image.');
       return;
     }
@@ -257,8 +283,12 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       final isSuperUser = userDoc.data()?['isSuperUser'] == true;
       final userName = userDoc.data()?['displayName'] ?? 'Anonymous';
 
-      // Step 1: Create the Firestore document first to get an auto-generated ID
-      final docRef = await FirebaseFirestore.instance.collection('places').add({
+      final docRef = _isEditing
+          ? FirebaseFirestore.instance
+                .collection('places')
+                .doc(widget.placeToEdit!.id)
+          : FirebaseFirestore.instance.collection('places').doc();
+      final placeData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'category': _category,
@@ -279,20 +309,33 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'ownerIsSuperUser': isSuperUser,
         'averageRating': 0.0,
         'reviewCount': 0,
-        'createdAt': FieldValue.serverTimestamp(),
+        if (!_isEditing) 'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      placeData['imageUrls'] = _existingImageUrls;
+
+      if (_isEditing) {
+        await docRef.update(placeData);
+      } else {
+        await docRef.set(placeData);
+      }
 
       // Step 2: Upload images using the document ID as the storage folder
       final imageUrls = await _uploadImages(docRef.id);
 
       // Step 3: Update the document with the real download URLs
-      await docRef.update({'imageUrls': imageUrls});
+      await docRef.update({
+        'imageUrls': [..._existingImageUrls, ...imageUrls],
+      });
 
-      // Step 4: Increment contribution count on the user's profile
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
-        {'contributionCount': FieldValue.increment(1)},
-      );
+      if (!_isEditing) {
+        // Step 4: Increment contribution count on the user's profile
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({'contributionCount': FieldValue.increment(1)});
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -323,9 +366,12 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: const Text(
-          'Add Place',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        title: Text(
+          _isEditing ? 'Edit Place' : 'Add Place',
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       body: SingleChildScrollView(
@@ -453,6 +499,53 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
               const SizedBox(height: 8),
+              if (_existingImageUrls.isNotEmpty)
+                SizedBox(
+                  height: 90,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _existingImageUrls.length,
+                    itemBuilder: (context, i) {
+                      return Stack(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              image: DecorationImage(
+                                image: NetworkImage(_existingImageUrls[i]),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 2,
+                            right: 10,
+                            child: GestureDetector(
+                              onTap: _isSaving
+                                  ? null
+                                  : () => setState(
+                                      () => _existingImageUrls.removeAt(i),
+                                    ),
+                              child: const CircleAvatar(
+                                radius: 10,
+                                backgroundColor: Colors.red,
+                                child: Icon(
+                                  Icons.close,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              if (_existingImageUrls.isNotEmpty) const SizedBox(height: 8),
               if (_selectedImages.isNotEmpty)
                 SizedBox(
                   height: 90,

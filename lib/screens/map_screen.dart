@@ -42,6 +42,8 @@ class _MapScreenState extends State<MapScreen> {
         data['id'] = doc.id;
         // Only add places that have a valid GeoPoint location
         if (data['location'] != null && data['location'] is GeoPoint) {
+          final geo = data['location'] as GeoPoint;
+          if (geo.latitude == 0 && geo.longitude == 0) continue;
           loaded.add(data);
         }
       }

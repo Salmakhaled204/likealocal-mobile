@@ -58,24 +58,71 @@ class HomeProvider extends ChangeNotifier {
       final userDoc = await _firestore.collection('users').doc(uid).get();
       final data = userDoc.data();
       var prefs = List<String>.from(data?['preferences'] ?? []);
+      final budget = (data?['budgetPreference'] ?? '').toString();
+      final atmosphere = (data?['atmospherePreference'] ?? '').toString();
+      final area = (data?['areaPreference'] ?? '').toString().toLowerCase();
 
       if (prefs.length > 10) {
         prefs = prefs.take(10).toList();
       }
 
-      if (prefs.isEmpty) {
+      if (prefs.isEmpty &&
+          budget.isEmpty &&
+          atmosphere.isEmpty &&
+          area.isEmpty) {
         _personalizedRecommendations = [];
         return;
       }
 
-      final snapshot = await _firestore
-          .collection('places')
-          .where('category', whereIn: prefs)
-          .limit(10)
-          .get();
+      final query = prefs.isEmpty
+          ? _firestore.collection('places').limit(100)
+          : _firestore
+                .collection('places')
+                .where('category', whereIn: prefs)
+                .limit(100);
 
-      _personalizedRecommendations = snapshot.docs.map(Place.fromFirestore).toList()
-        ..sort((a, b) => b.averageRating.compareTo(a.averageRating));
+      final snapshot = await query.get();
+      var matches = snapshot.docs.map(Place.fromFirestore).toList();
+
+      if (budget.isNotEmpty) {
+        matches = matches
+            .where(
+              (p) =>
+                  p.budget.isEmpty ||
+                  p.budget.toLowerCase() == budget.toLowerCase(),
+            )
+            .toList();
+      }
+      if (atmosphere.isNotEmpty) {
+        matches = matches
+            .where(
+              (p) =>
+                  p.atmosphere.isEmpty ||
+                  p.atmosphere.toLowerCase() == atmosphere.toLowerCase(),
+            )
+            .toList();
+      }
+      if (area.isNotEmpty) {
+        matches = matches
+            .where(
+              (p) =>
+                  p.address.toLowerCase().contains(area) ||
+                  p.title.toLowerCase().contains(area) ||
+                  p.description.toLowerCase().contains(area),
+            )
+            .toList();
+      }
+
+      _personalizedRecommendations = matches
+        ..sort((a, b) {
+          if (a.ownerIsSuperUser != b.ownerIsSuperUser) {
+            return a.ownerIsSuperUser ? -1 : 1;
+          }
+          return b.averageRating.compareTo(a.averageRating);
+        });
+      _personalizedRecommendations = _personalizedRecommendations
+          .take(10)
+          .toList();
     } catch (e) {
       _personalizedRecommendations = [];
       if (kDebugMode) {

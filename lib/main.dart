@@ -42,7 +42,56 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: ThemeData(primarySwatch: Colors.blue, cardColor: Colors.white),
-        home: const AuthWrapper(),
+        home: const SplashScreen(),
+      ),
+    );
+  }
+}
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _ready = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ready) return const AuthWrapper();
+
+    return Scaffold(
+      backgroundColor: Colors.blue,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.explore_rounded, color: Colors.white, size: 78),
+            const SizedBox(height: 16),
+            Text(
+              'LikeALocal',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Discover places locals love',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -62,6 +111,9 @@ class AuthWrapper extends StatelessWidget {
         'bio': '',
         'photoUrl': user.photoURL ?? '',
         'preferences': <String>[],
+        'budgetPreference': '',
+        'atmospherePreference': '',
+        'areaPreference': '',
         'chatEnabled': true,
         'publicProfile': true,
         'isSuperUser': false,
@@ -69,14 +121,22 @@ class AuthWrapper extends StatelessWidget {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (!context.mounted) return;
-      context.read<SearchProvider>().setUserPreferences(const []);
+      context.read<SearchProvider>().setDiscoveryPreferences(
+        categories: const [],
+        budget: '',
+        atmosphere: '',
+        area: '',
+      );
       return;
     }
 
     final data = snapshot.data() ?? {};
     if (!context.mounted) return;
-    context.read<SearchProvider>().setUserPreferences(
-      List<String>.from(data['preferences'] ?? []),
+    context.read<SearchProvider>().setDiscoveryPreferences(
+      categories: List<String>.from(data['preferences'] ?? []),
+      budget: (data['budgetPreference'] ?? '').toString(),
+      atmosphere: (data['atmospherePreference'] ?? '').toString(),
+      area: (data['areaPreference'] ?? '').toString(),
     );
   }
 
@@ -223,6 +283,9 @@ class _LoginScreenState extends State<LoginScreen> {
         'bio': '',
         'photoUrl': '',
         'preferences': <String>[],
+        'budgetPreference': '',
+        'atmospherePreference': '',
+        'areaPreference': '',
         'chatEnabled': true,
         'publicProfile': true,
         'isSuperUser': false,

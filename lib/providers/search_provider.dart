@@ -19,6 +19,9 @@ class SearchProvider extends ChangeNotifier {
   /// Loaded once after login from the user's Firestore profile.
   /// Automatically merged into every Firestore `whereIn` query.
   List<String> _userPreferences = [];
+  String _budgetPreference = '';
+  String _atmospherePreference = '';
+  String _areaPreference = '';
 
   // ── Debounce & race-condition guard ──────────────────────────────────────
 
@@ -38,6 +41,9 @@ class SearchProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   List<String> get selectedCategories => List.unmodifiable(_selectedCategories);
   List<String> get userPreferences => List.unmodifiable(_userPreferences);
+  String get budgetPreference => _budgetPreference;
+  String get atmospherePreference => _atmospherePreference;
+  String get areaPreference => _areaPreference;
 
   // ── User preference integration ──────────────────────────────────────────
 
@@ -47,6 +53,19 @@ class SearchProvider extends ChangeNotifier {
     _userPreferences = List<String>.from(preferences);
     _scheduleSearch();
     // notifyListeners is called inside _scheduleSearch / _performSearch.
+  }
+
+  void setDiscoveryPreferences({
+    required List<String> categories,
+    required String budget,
+    required String atmosphere,
+    required String area,
+  }) {
+    _userPreferences = List<String>.from(categories);
+    _budgetPreference = budget;
+    _atmospherePreference = atmosphere;
+    _areaPreference = area;
+    _scheduleSearch();
   }
 
   // ── Public filter mutators ───────────────────────────────────────────────
@@ -74,6 +93,9 @@ class SearchProvider extends ChangeNotifier {
     _debounceTimer?.cancel();
     _searchQuery = '';
     _selectedCategories.clear();
+    _budgetPreference = '';
+    _atmospherePreference = '';
+    _areaPreference = '';
     _searchResults = [];
     _isLoading = false;
     _errorMessage = null;
@@ -93,7 +115,10 @@ class SearchProvider extends ChangeNotifier {
     // Short-circuit: nothing to query → clear results immediately.
     if (_searchQuery.isEmpty &&
         _selectedCategories.isEmpty &&
-        _userPreferences.isEmpty) {
+        _userPreferences.isEmpty &&
+        _budgetPreference.isEmpty &&
+        _atmospherePreference.isEmpty &&
+        _areaPreference.isEmpty) {
       _searchResults = [];
       _isLoading = false;
       notifyListeners();
@@ -114,8 +139,9 @@ class SearchProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      Query<Map<String, dynamic>> query =
-          _firestore.collection('places').limit(100);
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('places')
+          .limit(100);
 
       // Merge manually selected categories with user preferences (OR filter).
       final Set<String> categoryFilter = {
@@ -126,7 +152,9 @@ class SearchProvider extends ChangeNotifier {
       if (categoryFilter.isNotEmpty) {
         final filterList = categoryFilter.toList();
         // Enforce Firestore limit of 10 items for whereIn
-        final limitedFilter = filterList.length > 10 ? filterList.take(10).toList() : filterList;
+        final limitedFilter = filterList.length > 10
+            ? filterList.take(10).toList()
+            : filterList;
         query = query.where('category', whereIn: limitedFilter);
       }
 
@@ -141,9 +169,46 @@ class SearchProvider extends ChangeNotifier {
       if (_searchQuery.isNotEmpty) {
         final lower = _searchQuery.toLowerCase();
         results = results
-            .where((p) =>
-                p.title.toLowerCase().contains(lower) ||
-                p.description.toLowerCase().contains(lower))
+            .where(
+              (p) =>
+                  p.title.toLowerCase().contains(lower) ||
+                  p.description.toLowerCase().contains(lower) ||
+                  p.category.toLowerCase().contains(lower) ||
+                  p.address.toLowerCase().contains(lower),
+            )
+            .toList();
+      }
+
+      if (_budgetPreference.isNotEmpty) {
+        results = results
+            .where(
+              (p) =>
+                  p.budget.isEmpty ||
+                  p.budget.toLowerCase() == _budgetPreference.toLowerCase(),
+            )
+            .toList();
+      }
+
+      if (_atmospherePreference.isNotEmpty) {
+        results = results
+            .where(
+              (p) =>
+                  p.atmosphere.isEmpty ||
+                  p.atmosphere.toLowerCase() ==
+                      _atmospherePreference.toLowerCase(),
+            )
+            .toList();
+      }
+
+      if (_areaPreference.isNotEmpty) {
+        final lowerArea = _areaPreference.toLowerCase();
+        results = results
+            .where(
+              (p) =>
+                  p.address.toLowerCase().contains(lowerArea) ||
+                  p.title.toLowerCase().contains(lowerArea) ||
+                  p.description.toLowerCase().contains(lowerArea),
+            )
             .toList();
       }
 

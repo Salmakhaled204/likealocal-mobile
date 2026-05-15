@@ -63,9 +63,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void _navigateToDetails(BuildContext context, Place place) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => PlaceDetailsScreen(place: place),
-      ),
+      MaterialPageRoute(builder: (_) => PlaceDetailsScreen(place: place)),
     );
   }
 
@@ -108,17 +106,19 @@ class _SearchScreenState extends State<SearchScreen> {
                       decoration: InputDecoration(
                         hintText: 'Search places…',
                         hintStyle: GoogleFonts.inter(color: Colors.grey[500]),
-                        prefixIcon:
-                            Icon(Icons.search, color: Colors.grey[500]),
+                        prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
                         border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                        ),
                         // Driven by _searchController.text (kept in sync by
                         // the addListener in initState) so it reacts instantly.
                         suffixIcon: _searchController.text.isNotEmpty
                             ? IconButton(
-                                icon: Icon(Icons.clear,
-                                    color: Colors.grey[500]),
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Colors.grey[500],
+                                ),
                                 onPressed: _clearSearch,
                               )
                             : null,
@@ -134,7 +134,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   builder: (context, provider, _) {
                     final hasFilters =
                         provider.selectedCategories.isNotEmpty ||
-                            provider.userPreferences.isNotEmpty;
+                        provider.userPreferences.isNotEmpty;
                     return Stack(
                       children: [
                         IconButton(
@@ -192,18 +192,26 @@ class _SearchScreenState extends State<SearchScreen> {
                 // Empty prompt — nothing entered and no active filters
                 if (searchProvider.searchQuery.isEmpty &&
                     searchProvider.selectedCategories.isEmpty &&
-                    searchProvider.userPreferences.isEmpty) {
+                    searchProvider.userPreferences.isEmpty &&
+                    searchProvider.budgetPreference.isEmpty &&
+                    searchProvider.atmospherePreference.isEmpty &&
+                    searchProvider.areaPreference.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.search_rounded,
-                            size: 80, color: Colors.grey[300]),
+                        Icon(
+                          Icons.search_rounded,
+                          size: 80,
+                          color: Colors.grey[300],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'Start typing to search…',
                           style: GoogleFonts.inter(
-                              color: Colors.grey[500], fontSize: 16),
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
@@ -216,13 +224,18 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.inbox_rounded,
-                            size: 80, color: Colors.grey[300]),
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 80,
+                          color: Colors.grey[300],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'No results found',
                           style: GoogleFonts.inter(
-                              color: Colors.grey[500], fontSize: 16),
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),

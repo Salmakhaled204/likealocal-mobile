@@ -2,8 +2,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/place.dart';
+import 'add_place_screen.dart';
+import 'chat_service.dart';
 
 class PlaceDetailsScreen extends StatefulWidget {
   final Place place;
@@ -75,16 +79,34 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         .doc(_placeId);
 
     final nextValue = !_isFavorite;
-    setState(() => _isFavorite = nextValue);
 
     try {
       if (nextValue) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        final isPremium = userDoc.data()?['isPremium'] == true;
+        final currentFavorites = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('favorites')
+            .limit(6)
+            .get();
+
+        if (!isPremium && currentFavorites.docs.length >= 5) {
+          if (mounted) _showPremiumDialog();
+          return;
+        }
+
+        if (mounted) setState(() => _isFavorite = true);
         await ref.set({
           ...place.toFirestore(),
           'placeId': _placeId,
           'savedAt': FieldValue.serverTimestamp(),
         });
       } else {
+        if (mounted) setState(() => _isFavorite = false);
         await ref.delete();
       }
     } catch (_) {
@@ -194,7 +216,133 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 
     await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
       'averageRating': average,
+      'reviewCount': snap.docs.length,
     });
+  }
+
+  Future<void> _openDirections(Place place) async {
+    final lat = place.location.latitude;
+    final lng = place.location.longitude;
+    if (lat == 0 && lng == 0) {
+      _showSnack('Directions are unavailable for this place.');
+      return;
+    }
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showSnack('Could not open maps.');
+    }
+  }
+
+  Future<void> _saveLocationReminder(Place place) async {
+    final uid = _uid;
+    if (uid == null) {
+      _showSnack('Log in to set reminders.');
+      return;
+    }
+
+    final lat = place.location.latitude;
+    final lng = place.location.longitude;
+    if (lat == 0 && lng == 0) {
+      _showSnack('This place has no usable location for reminders.');
+      return;
+    }
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('locationReminders')
+        .doc(place.id)
+        .set({
+          'placeId': place.id,
+          'title': place.title,
+          'location': place.location,
+          'enabled': true,
+          'radiusMeters': 300,
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _showSnack('Reminder saved. Enable location permission for alerts.');
+        return;
+      }
+
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      final distance = Geolocator.distanceBetween(
+        current.latitude,
+        current.longitude,
+        lat,
+        lng,
+      );
+      _showSnack(
+        distance <= 300
+            ? 'Reminder saved. You are already nearby!'
+            : 'Reminder saved. We will use this place for nearby alerts.',
+      );
+    } catch (_) {
+      _showSnack('Reminder saved.');
+    }
+  }
+
+  Future<void> _deletePlace() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete place?'),
+        content: const Text('This removes the place for everyone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('places')
+          .doc(_placeId)
+          .delete();
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showSnack('Place deleted.');
+    } catch (_) {
+      _showSnack('Could not delete this place.');
+    }
+  }
+
+  void _showPremiumDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Upgrade to Premium'),
+        content: const Text(
+          'Free accounts can save up to 5 places. Premium saving is coming soon.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _startEditing(String reviewId, String text, int rating) {
@@ -251,9 +399,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                     children: [
                       _buildHeader(context, place),
                       const SizedBox(height: 20),
+                      _buildQuickActions(context, place),
+                      const SizedBox(height: 20),
                       const Divider(),
                       const SizedBox(height: 16),
                       _buildDescription(place),
+                      const SizedBox(height: 24),
+                      _buildPlaceInfo(place),
                       const SizedBox(height: 28),
                       const Divider(),
                       const SizedBox(height: 20),
@@ -449,6 +601,139 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
             fontSize: 15,
             color: Colors.grey[700],
             height: 1.6,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickActions(BuildContext context, Place place) {
+    final isOwner = _uid != null && _uid == place.ownerId;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        ElevatedButton.icon(
+          onPressed: () => _openDirections(place),
+          icon: const Icon(Icons.directions),
+          label: const Text('Directions'),
+        ),
+        OutlinedButton.icon(
+          onPressed: place.ownerId.isEmpty
+              ? null
+              : () => ChatService.startChat(
+                  context,
+                  place.ownerId,
+                  otherUserName: place.ownerName,
+                ),
+          icon: const Icon(Icons.chat_bubble_outline),
+          label: const Text('Message owner'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _saveLocationReminder(place),
+          icon: const Icon(Icons.notifications_active_outlined),
+          label: const Text('Remind me nearby'),
+        ),
+        if (isOwner)
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AddPlaceScreen(placeToEdit: place),
+              ),
+            ),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit'),
+          ),
+        if (isOwner)
+          OutlinedButton.icon(
+            onPressed: _deletePlace,
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            label: const Text('Delete'),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPlaceInfo(Place place) {
+    final details = <({IconData icon, String label, String value})>[
+      if (place.address.isNotEmpty)
+        (icon: Icons.place_outlined, label: 'Address', value: place.address),
+      if (place.budget.isNotEmpty)
+        (icon: Icons.payments_outlined, label: 'Budget', value: place.budget),
+      if (place.atmosphere.isNotEmpty)
+        (icon: Icons.groups_outlined, label: 'Vibe', value: place.atmosphere),
+      if (place.localTip.isNotEmpty)
+        (
+          icon: Icons.lightbulb_outline,
+          label: 'Local tip',
+          value: place.localTip,
+        ),
+      if (place.recommendedDish.isNotEmpty)
+        (
+          icon: Icons.restaurant_menu_outlined,
+          label: 'Recommended',
+          value: place.recommendedDish,
+        ),
+      if (place.ownerName.isNotEmpty)
+        (
+          icon: Icons.person_outline,
+          label: 'Contributor',
+          value: place.ownerName,
+        ),
+    ];
+
+    if (details.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Local details',
+          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 12),
+        ...details.map(
+          (detail) => Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  detail.icon,
+                  size: 20,
+                  color: Theme.of(context).primaryColor,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        detail.label,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        detail.value,
+                        style: GoogleFonts.inter(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
