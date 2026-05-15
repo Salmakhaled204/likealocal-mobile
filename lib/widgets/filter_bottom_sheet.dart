@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/search_provider.dart';
+import '../theme/app_theme.dart';
 
 class FilterBottomSheet extends StatelessWidget {
   FilterBottomSheet({super.key});
 
-  // Full list of categories available in the app.
-  final List<String> availableCategories = [
+  final List<String> _categories = [
     'Restaurants',
     'Hidden Gems',
     'Experiences',
@@ -18,161 +18,213 @@ class FilterBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Consumer<SearchProvider>(
-      builder: (context, searchProvider, _) {
-        // Fix #3 – Read the user's preferences from the provider so that
-        // preference-matched chips are visually highlighted automatically.
-        final userPrefs = searchProvider.userPreferences;
+      builder: (context, sp, _) {
+        final userPrefs = sp.userPreferences;
 
         return Container(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            // Keeps the sheet above the soft keyboard when open.
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          padding: EdgeInsets.fromLTRB(
+            24,
+            0,
+            24,
+            MediaQuery.of(context).viewInsets.bottom + 24,
           ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                blurRadius: 32,
+                offset: const Offset(0, -8),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header ──────────────────────────────────────────────────
+              // ── Handle ────────────────────────────────────────────────
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // ── Header ────────────────────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
                     'Filters',
-                    style: GoogleFonts.inter(
-                      fontSize: 24,
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
+                      color: AppTheme.textDark,
                     ),
                   ),
                   TextButton(
                     onPressed: () {
-                      searchProvider.clearManualFilters();
+                      sp.clearManualFilters();
                       Navigator.pop(context);
                     },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.dustyPink,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
                     child: Text(
-                      'Clear All',
-                      style: GoogleFonts.inter(
-                        color: Colors.redAccent,
+                      'Clear all',
+                      style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
                     ),
                   ),
                 ],
               ),
 
-              // ── Category chips ───────────────────────────────────────────
-              const SizedBox(height: 16),
+              // ── Categories ────────────────────────────────────────────
+              const SizedBox(height: 6),
               Text(
                 'Categories',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey[700],
+                  color: AppTheme.textMid,
                 ),
               ),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
-                runSpacing: 8,
-                children: availableCategories.map((category) {
-                  final isSelected = searchProvider.selectedCategories.contains(
-                    category,
-                  );
+                runSpacing: 10,
+                children: _categories.map((cat) {
+                  final selected = sp.selectedCategories.contains(cat);
+                  final preferred = userPrefs.contains(cat);
 
-                  // Fix #3 – A category matched by the user's saved preferences
-                  // is shown with a secondary tint so the user can see which
-                  // categories come from their profile.
-                  final isPreferred = userPrefs.contains(category);
-
-                  return FilterChip(
-                    label: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isPreferred)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Icon(
-                              Icons.favorite,
-                              size: 12,
-                              color: isSelected
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.pinkAccent,
+                  return GestureDetector(
+                    onTap: () => sp.toggleCategory(cat),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppTheme.primaryLight
+                            : preferred
+                                ? const Color(0xFFFDF0F4)
+                                : AppTheme.surfaceWarm,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected
+                              ? AppTheme.primary
+                              : preferred
+                                  ? AppTheme.dustyPink.withValues(alpha: 0.4)
+                                  : AppTheme.border,
+                          width: selected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (preferred)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 5),
+                              child: Icon(
+                                Icons.favorite_rounded,
+                                size: 12,
+                                color: selected
+                                    ? AppTheme.primary
+                                    : AppTheme.dustyPink,
+                              ),
+                            ),
+                          Text(
+                            cat,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: selected || preferred
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: selected
+                                  ? AppTheme.primary
+                                  : preferred
+                                      ? AppTheme.dustyPink
+                                      : AppTheme.textMid,
                             ),
                           ),
-                        Text(category),
-                      ],
-                    ),
-                    selected: isSelected,
-                    onSelected: (_) => searchProvider.toggleCategory(category),
-                    selectedColor: Theme.of(
-                      context,
-                    ).primaryColor.withValues(alpha: 0.2),
-                    checkmarkColor: Theme.of(context).primaryColor,
-                    backgroundColor: isPreferred
-                        ? Colors.pink.withValues(alpha: 0.07)
-                        : Colors.grey[100],
-                    labelStyle: GoogleFonts.inter(
-                      color: isSelected
-                          ? Theme.of(context).primaryColor
-                          : Colors.black87,
-                      fontWeight: isSelected || isPreferred
-                          ? FontWeight.w600
-                          : FontWeight.normal,
+                          if (selected) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 14,
+                              color: AppTheme.primary,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   );
                 }).toList(),
               ),
 
-              // ── Preference legend (only shown if user has preferences) ──
+              // ── Preference legend ─────────────────────────────────────
               if (userPrefs.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.favorite,
-                      size: 12,
-                      color: Colors.pinkAccent,
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFDF0F4),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.dustyPink.withValues(alpha: 0.3),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Matches your preferences',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: Colors.grey[600],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.favorite_rounded,
+                        size: 13,
+                        color: AppTheme.dustyPink,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 7),
+                      Text(
+                        'Matches your preferences',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: AppTheme.dustyPink,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
 
-              // ── Apply button ─────────────────────────────────────────────
+              // ── Apply ─────────────────────────────────────────────────
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
+                height: 52,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
                   onPressed: () => Navigator.pop(context),
-                  child: Text(
-                    'Apply Filters',
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text('Apply filters'),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
             ],
           ),
         );

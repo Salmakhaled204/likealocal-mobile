@@ -3,29 +3,23 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
+import 'theme/app_theme.dart';
 
-// Required for background notifications — must be top-level (outside any class)
 @pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // No need to do anything here for basic notifications
-}
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // Register background handler BEFORE runApp
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  // Initialize push notifications
   await NotificationService.initialize();
-
   runApp(const MyApp());
 }
 
@@ -41,13 +35,16 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(primarySwatch: Colors.blue, cardColor: Colors.white),
+        theme: AppTheme.theme,
         home: const SplashScreen(),
       ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Splash
+// ─────────────────────────────────────────────────────────────────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -55,15 +52,34 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _fade;
+  late final Animation<double> _scale;
   bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 900), () {
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _scale = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
+    );
+    _ctrl.forward();
+    Future<void>.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) setState(() => _ready = true);
     });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -71,32 +87,87 @@ class _SplashScreenState extends State<SplashScreen> {
     if (_ready) return const AuthWrapper();
 
     return Scaffold(
-      backgroundColor: Colors.blue,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.explore_rounded, color: Colors.white, size: 78),
-            const SizedBox(height: 16),
-            Text(
-              'LikeALocal',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+      backgroundColor: AppTheme.background,
+      body: FadeTransition(
+        opacity: _fade,
+        child: ScaleTransition(
+          scale: _scale,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Logo bubble
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryLight,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primary.withValues(alpha: 0.2),
+                        blurRadius: 32,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.location_on_rounded,
+                    color: AppTheme.primary,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'LikeALocal',
+                  style: GoogleFonts.poppins(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Explore cities authentically',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: AppTheme.textLight,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 56),
+                // Soft loading dots
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (i) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: i == 0
+                            ? AppTheme.primary
+                            : i == 1
+                                ? AppTheme.primaryDim
+                                : AppTheme.border,
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Discover places locals love',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth wrapper
+// ─────────────────────────────────────────────────────────────────────────────
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -147,7 +218,13 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            backgroundColor: AppTheme.background,
+            body: Center(
+              child: CircularProgressIndicator(
+                color: AppTheme.primary,
+                strokeWidth: 2.5,
+              ),
+            ),
           );
         }
 
@@ -159,25 +236,52 @@ class AuthWrapper extends StatelessWidget {
           builder: (context, profileSnapshot) {
             if (profileSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
+                backgroundColor: AppTheme.background,
+                body: Center(
+                  child: CircularProgressIndicator(
+                    color: AppTheme.primary,
+                    strokeWidth: 2.5,
+                  ),
+                ),
               );
             }
-
             if (profileSnapshot.hasError) {
               return Scaffold(
+                backgroundColor: AppTheme.background,
                 body: Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Could not load your profile. Please check Firebase rules.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.red[700]),
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: AppTheme.peachLight,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.wifi_off_rounded,
+                            color: AppTheme.peach,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Could not load your profile.\nPlease check Firebase rules.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            color: AppTheme.textMid,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               );
             }
-
             return const HomeScreen();
           },
         );
@@ -186,6 +290,9 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Login / Sign-up
+// ─────────────────────────────────────────────────────────────────────────────
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -195,68 +302,71 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
 
   bool _isLogin = true;
   bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool _obscurePass = true;
+  bool _obscureConfirm = true;
   String _message = '';
   bool _isError = false;
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
-  String? _validateName(String? value) {
+  // ── Validators ────────────────────────────────────────────────────────────
+  String? _validateName(String? v) {
     if (_isLogin) return null;
-    final name = value?.trim() ?? '';
-    if (name.isEmpty) return 'Display name is required';
-    if (name.length < 2) return 'Display name is too short';
+    final s = v?.trim() ?? '';
+    if (s.isEmpty) return 'Name is required';
+    if (s.length < 2) return 'Name is too short';
     return null;
   }
 
-  String? _validateEmail(String? value) {
-    final email = value?.trim() ?? '';
-    if (email.isEmpty) return 'Email is required';
-    final regex = RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!regex.hasMatch(email)) return 'Enter a valid email address';
+  String? _validateEmail(String? v) {
+    final s = v?.trim() ?? '';
+    if (s.isEmpty) return 'Email is required';
+    if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(s)) {
+      return 'Enter a valid email';
+    }
     return null;
   }
 
-  String? _validatePassword(String? value) {
-    final password = value ?? '';
-    if (password.isEmpty) return 'Password is required';
-    if (password.length < 6) return 'Password must be at least 6 characters';
+  String? _validatePassword(String? v) {
+    final s = v ?? '';
+    if (s.isEmpty) return 'Password is required';
+    if (s.length < 6) return 'Minimum 6 characters';
     return null;
   }
 
-  String? _validateConfirmPassword(String? value) {
+  String? _validateConfirm(String? v) {
     if (_isLogin) return null;
-    if (value != _passwordController.text) return 'Passwords do not match';
+    if (v != _passCtrl.text) return 'Passwords do not match';
     return null;
   }
 
+  // ── Actions ───────────────────────────────────────────────────────────────
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    _setLoading();
-
+    _startLoading();
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        email: _emailCtrl.text.trim(),
+        password: _passCtrl.text.trim(),
       );
     } on FirebaseAuthException catch (e) {
-      _setMessage(_authError(e), isError: true);
+      _setMsg(_authError(e), error: true);
     } catch (_) {
-      _setMessage('An unexpected error occurred.', isError: true);
+      _setMsg('An unexpected error occurred.', error: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -264,18 +374,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _signup() async {
     if (!_formKey.currentState!.validate()) return;
-    _setLoading();
-
+    _startLoading();
     try {
-      final name = _nameController.text.trim();
-      final email = _emailController.text.trim();
-      final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: email,
-            password: _passwordController.text.trim(),
-          );
-
-      final user = credential.user!;
+      final name = _nameCtrl.text.trim();
+      final email = _emailCtrl.text.trim();
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: _passCtrl.text.trim(),
+      );
+      final user = cred.user!;
       await user.updateDisplayName(name);
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'email': email,
@@ -293,257 +400,354 @@ class _LoginScreenState extends State<LoginScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } on FirebaseAuthException catch (e) {
-      _setMessage(_authError(e), isError: true);
+      _setMsg(_authError(e), error: true);
     } catch (_) {
-      _setMessage('An unexpected error occurred.', isError: true);
+      _setMsg('An unexpected error occurred.', error: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _resetPassword() async {
-    final email = _emailController.text.trim();
+    final email = _emailCtrl.text.trim();
     if (email.isEmpty || _validateEmail(email) != null) {
-      _setMessage(
-        'Enter your email first, then tap Forgot password.',
-        isError: true,
-      );
+      _setMsg('Enter your email first, then tap Forgot password.', error: true);
       return;
     }
-
-    _setLoading();
+    _startLoading();
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      _setMessage('Password reset email sent.', isError: false);
+      _setMsg('Reset email sent — check your inbox.', error: false);
     } on FirebaseAuthException catch (e) {
-      _setMessage(_authError(e), isError: true);
+      _setMsg(_authError(e), error: true);
     } catch (_) {
-      _setMessage('Could not send reset email.', isError: true);
+      _setMsg('Could not send reset email.', error: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _setLoading() {
+  void _startLoading() => setState(() {
+        _isLoading = true;
+        _message = '';
+        _isError = false;
+      });
+
+  void _setMsg(String msg, {required bool error}) {
+    if (!mounted) return;
     setState(() {
-      _isLoading = true;
-      _message = '';
-      _isError = false;
+      _message = msg;
+      _isError = error;
     });
   }
 
-  void _setMessage(String message, {required bool isError}) {
-    if (!mounted) return;
-    setState(() {
-      _message = message;
-      _isError = isError;
-    });
-  }
+  void _switchMode(bool login) => setState(() {
+        _isLogin = login;
+        _message = '';
+        _isError = false;
+        _formKey.currentState?.reset();
+      });
 
   String _authError(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':
         return 'An account already exists for this email.';
       case 'invalid-email':
-        return 'Invalid email format.';
+        return 'Invalid email address.';
       case 'invalid-credential':
       case 'user-not-found':
       case 'wrong-password':
         return 'Incorrect email or password.';
-      case 'operation-not-allowed':
-        return 'Email/password login is not enabled in Firebase Console.';
       case 'too-many-requests':
-        return 'Too many attempts. Please try again later.';
+        return 'Too many attempts. Try again later.';
       case 'weak-password':
         return 'Password must be at least 6 characters.';
       case 'network-request-failed':
-        return 'Network error. Check your internet connection.';
+        return 'Network error. Check your connection.';
       default:
         return e.message ?? 'Authentication failed.';
     }
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             child: Form(
               key: _formKey,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.explore_rounded,
-                    size: 64,
-                    color: Colors.blue,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'LikeALocal',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
+                  // ── Logo ────────────────────────────────────────────────
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withValues(alpha: 0.18),
+                          blurRadius: 24,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      color: AppTheme.primary,
+                      size: 40,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 18),
                   Text(
-                    _isLogin ? 'Welcome back!' : 'Create your account',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                    'LikeALocal',
+                    style: GoogleFonts.poppins(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textDark,
+                      letterSpacing: -0.3,
+                    ),
                   ),
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Explore cities authentically',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: AppTheme.textLight,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // ── Mode toggle ──────────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceWarm,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      children: [
+                        _Tab(
+                          label: 'Sign in',
+                          isActive: _isLogin,
+                          onTap: () => _switchMode(true),
+                        ),
+                        _Tab(
+                          label: 'Sign up',
+                          isActive: !_isLogin,
+                          onTap: () => _switchMode(false),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Name (sign-up) ───────────────────────────────────────
                   if (!_isLogin) ...[
+                    _FieldLabel('Full name'),
+                    const SizedBox(height: 8),
                     TextFormField(
-                      controller: _nameController,
+                      controller: _nameCtrl,
                       textCapitalization: TextCapitalization.words,
                       validator: _validateName,
-                      decoration: InputDecoration(
-                        labelText: 'Display name',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      decoration: const InputDecoration(
+                        hintText: 'Your name',
+                        prefixIcon: Icon(
+                          Icons.person_outline_rounded,
+                          size: 20,
+                          color: AppTheme.textLight,
                         ),
-                        filled: true,
-                        fillColor: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 16),
                   ],
+
+                  // ── Email ────────────────────────────────────────────────
+                  _FieldLabel('Email'),
+                  const SizedBox(height: 8),
                   TextFormField(
-                    controller: _emailController,
+                    controller: _emailCtrl,
                     keyboardType: TextInputType.emailAddress,
                     validator: _validateEmail,
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    decoration: const InputDecoration(
+                      hintText: 'your@email.com',
+                      prefixIcon: Icon(
+                        Icons.mail_outline_rounded,
+                        size: 20,
+                        color: AppTheme.textLight,
                       ),
-                      filled: true,
-                      fillColor: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // ── Password ─────────────────────────────────────────────
+                  _FieldLabel('Password'),
+                  const SizedBox(height: 8),
                   TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
+                    controller: _passCtrl,
+                    obscureText: _obscurePass,
                     validator: _validatePassword,
                     decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                        ),
-                        onPressed: () => setState(
-                          () => _obscurePassword = !_obscurePassword,
-                        ),
+                      hintText: '••••••••',
+                      prefixIcon: const Icon(
+                        Icons.lock_outline_rounded,
+                        size: 20,
+                        color: AppTheme.textLight,
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      suffixIcon: _EyeToggle(
+                        obscure: _obscurePass,
+                        onToggle: () =>
+                            setState(() => _obscurePass = !_obscurePass),
                       ),
-                      filled: true,
-                      fillColor: Colors.white,
                     ),
                   ),
+
+                  // ── Confirm password (sign-up) ────────────────────────────
                   if (!_isLogin) ...[
                     const SizedBox(height: 16),
+                    _FieldLabel('Confirm password'),
+                    const SizedBox(height: 8),
                     TextFormField(
-                      controller: _confirmPasswordController,
-                      obscureText: _obscurePassword,
-                      validator: _validateConfirmPassword,
+                      controller: _confirmCtrl,
+                      obscureText: _obscureConfirm,
+                      validator: _validateConfirm,
                       decoration: InputDecoration(
-                        labelText: 'Confirm password',
-                        prefixIcon: const Icon(Icons.lock_reset_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        hintText: '••••••••',
+                        prefixIcon: const Icon(
+                          Icons.lock_reset_outlined,
+                          size: 20,
+                          color: AppTheme.textLight,
                         ),
-                        filled: true,
-                        fillColor: Colors.white,
+                        suffixIcon: _EyeToggle(
+                          obscure: _obscureConfirm,
+                          onToggle: () =>
+                              setState(() => _obscureConfirm = !_obscureConfirm),
+                        ),
                       ),
                     ),
                   ],
+
+                  // ── Forgot password ──────────────────────────────────────
+                  if (_isLogin) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _isLoading ? null : _resetPassword,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Forgot password?',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // ── Status message ───────────────────────────────────────
                   if (_message.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                        horizontal: 14,
+                        vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: _isError ? Colors.red[50] : Colors.green[50],
-                        borderRadius: BorderRadius.circular(8),
+                        color: _isError ? AppTheme.peachLight : AppTheme.mintLight,
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _isError
-                              ? Colors.red[200]!
-                              : Colors.green[200]!,
+                              ? AppTheme.peach.withValues(alpha: 0.5)
+                              : AppTheme.mint.withValues(alpha: 0.5),
                         ),
                       ),
-                      child: Text(
-                        _message,
-                        style: TextStyle(
-                          color: _isError ? Colors.red[700] : Colors.green[700],
-                          fontSize: 13,
-                        ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isError
+                                ? Icons.error_outline_rounded
+                                : Icons.check_circle_outline_rounded,
+                            size: 18,
+                            color: _isError ? AppTheme.peach : AppTheme.mint,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _message,
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: _isError ? AppTheme.peach : AppTheme.mint,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                  const SizedBox(height: 24),
+
+                  const SizedBox(height: 28),
+
+                  // ── CTA ─────────────────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
-                    height: 50,
+                    height: 52,
                     child: ElevatedButton(
                       onPressed: _isLoading
                           ? null
                           : (_isLogin ? _login : _signup),
-                      style: ElevatedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
                       child: _isLoading
                           ? const SizedBox(
                               width: 22,
                               height: 22,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                                strokeWidth: 2.5,
                                 color: Colors.white,
                               ),
                             )
-                          : Text(
-                              _isLogin ? 'Login' : 'Sign Up',
-                              style: const TextStyle(fontSize: 16),
-                            ),
+                          : Text(_isLogin ? 'Sign in' : 'Create account'),
                     ),
                   ),
-                  if (_isLogin)
-                    TextButton(
-                      onPressed: _isLoading ? null : _resetPassword,
-                      child: const Text('Forgot password?'),
-                    ),
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () => setState(() {
-                            _isLogin = !_isLogin;
-                            _message = '';
-                            _isError = false;
-                            _formKey.currentState?.reset();
-                          }),
-                    child: Text(
-                      _isLogin
-                          ? "Don't have an account? Sign Up"
-                          : 'Already have an account? Login',
-                    ),
+                  const SizedBox(height: 24),
+
+                  // ── Footer ───────────────────────────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _isLogin
+                            ? "Don't have an account?  "
+                            : 'Already have an account?  ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: AppTheme.textLight,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _isLoading ? null : () => _switchMode(!_isLogin),
+                        child: Text(
+                          _isLogin ? 'Sign up free' : 'Sign in',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: AppTheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -551,6 +755,93 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Small reusable widgets ────────────────────────────────────────────────────
+
+class _Tab extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _Tab({required this.label, required this.isActive, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: BoxDecoration(
+            color: isActive ? AppTheme.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: AppTheme.primary.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: isActive ? Colors.white : AppTheme.textLight,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
+  final String text;
+  const _FieldLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: GoogleFonts.poppins(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: AppTheme.textMid,
+        ),
+      ),
+    );
+  }
+}
+
+class _EyeToggle extends StatelessWidget {
+  final bool obscure;
+  final VoidCallback onToggle;
+
+  const _EyeToggle({required this.obscure, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(
+        obscure
+            ? Icons.visibility_off_outlined
+            : Icons.visibility_outlined,
+        size: 20,
+        color: AppTheme.textLight,
+      ),
+      onPressed: onToggle,
     );
   }
 }

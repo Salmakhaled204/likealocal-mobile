@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/place.dart';
+import '../theme/app_theme.dart';
 
 class PlaceCard extends StatelessWidget {
   final Place place;
@@ -9,52 +10,108 @@ class PlaceCard extends StatelessWidget {
 
   const PlaceCard({super.key, required this.place, required this.onTap});
 
+  // Pick a soft accent per category for variety
+  static Color _accentFor(String category) {
+    final c = category.toLowerCase();
+    if (c.contains('cafe') || c.contains('coffee')) return AppTheme.mint;
+    if (c.contains('restaurant') || c.contains('food')) return AppTheme.peach;
+    if (c.contains('nightlife') || c.contains('bar')) return AppTheme.dustyPink;
+    if (c.contains('museum') || c.contains('culture')) return AppTheme.softBlue;
+    if (c.contains('hidden') || c.contains('gem')) return AppTheme.primary;
+    return AppTheme.primary;
+  }
+
+  static Color _accentLightFor(String category) {
+    final c = category.toLowerCase();
+    if (c.contains('cafe') || c.contains('coffee')) return AppTheme.mintLight;
+    if (c.contains('restaurant') || c.contains('food')) return AppTheme.peachLight;
+    if (c.contains('nightlife') || c.contains('bar')) {
+      return const Color(0xFFF9EEF2);
+    }
+    if (c.contains('museum') || c.contains('culture')) {
+      return const Color(0xFFE8F1F9);
+    }
+    return AppTheme.primaryLight;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accent = _accentFor(place.category);
+    final accentLight = _accentLightFor(place.category);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: const EdgeInsets.only(bottom: 18),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: AppTheme.cardShadow,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // ── Image ──────────────────────────────────────────────────
             Stack(
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
+                    top: Radius.circular(20),
                   ),
                   child: CachedNetworkImage(
                     imageUrl: place.imageUrls.isNotEmpty
                         ? place.imageUrls.first
-                        : 'https://placehold.co/400x200/cccccc/999999?text=No+Image',
-                    height: 180,
+                        : 'https://placehold.co/400x220/F5F3F0/A5A5BB?text=LikeALocal',
+                    height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      height: 180,
-                      color: Colors.grey[200],
-                      child: const Center(child: CircularProgressIndicator()),
+                      height: 200,
+                      color: AppTheme.surfaceWarm,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppTheme.primaryDim,
+                          strokeWidth: 2,
+                        ),
+                      ),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      height: 180,
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
+                      height: 200,
+                      color: AppTheme.surfaceWarm,
+                      child: Center(
+                        child: Icon(
+                          Icons.image_outlined,
+                          color: AppTheme.textLight,
+                          size: 40,
+                        ),
+                      ),
                     ),
                   ),
                 ),
+
+                // Soft gradient at bottom of image
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.25),
+                          ],
+                          stops: const [0.6, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Super User badge
                 if (place.ownerIsSuperUser)
                   Positioned(
                     top: 12,
@@ -62,61 +119,76 @@ class PlaceCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
-                        vertical: 6,
+                        vertical: 5,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.amber,
+                        color: AppTheme.amber,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 4,
+                            color: AppTheme.amber.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
                         ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.star, color: Colors.white, size: 16),
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Colors.white,
+                            size: 12,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Super User',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.poppins(
                               color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
+
+                // Rating badge
                 Positioned(
                   top: 12,
                   right: 12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: 10,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
                           Icons.star_rounded,
-                          color: Colors.amber,
-                          size: 16,
+                          color: AppTheme.amber,
+                          size: 14,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           place.averageRating.toStringAsFixed(1),
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.bold,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
+                            color: AppTheme.textDark,
                           ),
                         ),
                       ],
@@ -126,54 +198,55 @@ class PlaceCard extends StatelessWidget {
               ],
             ),
 
-            // Details
+            // ── Info ───────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
                           place.title,
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
+                          style: GoogleFonts.poppins(
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
+                            color: AppTheme.textDark,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
+                          horizontal: 10,
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).primaryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: accentLight,
+                          borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           place.category,
-                          style: GoogleFonts.inter(
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 12,
+                          style: GoogleFonts.poppins(
+                            color: accent,
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     place.description,
-                    style: GoogleFonts.inter(
-                      color: Colors.grey[600],
-                      fontSize: 14,
+                    style: GoogleFonts.poppins(
+                      color: AppTheme.textLight,
+                      fontSize: 13,
+                      height: 1.5,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -181,7 +254,7 @@ class PlaceCard extends StatelessWidget {
                   if (place.address.isNotEmpty ||
                       place.budget.isNotEmpty ||
                       place.atmosphere.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
@@ -223,23 +296,27 @@ class _MetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      constraints: const BoxConstraints(maxWidth: 190),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
+        color: AppTheme.surfaceWarm,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: Colors.grey[600]),
-          const SizedBox(width: 4),
+          Icon(icon, size: 12, color: AppTheme.textLight),
+          const SizedBox(width: 5),
           Flexible(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(fontSize: 11, color: Colors.grey[700]),
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                color: AppTheme.textMid,
+              ),
             ),
           ),
         ],

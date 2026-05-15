@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
+import '../theme/app_theme.dart';
 
 class ShimmerLoadingList extends StatelessWidget {
   const ShimmerLoadingList({super.key});
@@ -11,32 +12,38 @@ class ShimmerLoadingList extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemBuilder: (context, index) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 18),
           child: Shimmer.fromColors(
-            baseColor: Colors.grey[300]!,
-            highlightColor: Colors.grey[100]!,
+            baseColor: AppTheme.surfaceWarm,
+            highlightColor: AppTheme.surface,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  height: 180,
+                  height: 200,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    color: AppTheme.surfaceWarm,
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
                 const SizedBox(height: 12),
                 Container(
-                  height: 20,
+                  height: 18,
                   width: double.infinity,
-                  color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceWarm,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  height: 16,
-                  width: MediaQuery.of(context).size.width * 0.6,
-                  color: Colors.white,
+                  height: 14,
+                  width: MediaQuery.of(context).size.width * 0.55,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceWarm,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ],
             ),
@@ -53,21 +60,21 @@ class ShimmerLoadingHorizontal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 150,
+      height: 220,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: 3,
         itemBuilder: (context, index) {
-          return Container(
-            margin: const EdgeInsets.only(right: 16),
-            width: 200,
+          return Padding(
+            padding: const EdgeInsets.only(right: 14),
             child: Shimmer.fromColors(
-              baseColor: Colors.grey[300]!,
-              highlightColor: Colors.grey[100]!,
+              baseColor: AppTheme.surfaceWarm,
+              highlightColor: AppTheme.surface,
               child: Container(
+                width: 165,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.surfaceWarm,
+                  borderRadius: BorderRadius.circular(18),
                 ),
               ),
             ),
