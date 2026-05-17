@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function currentUserData() {
+      return userDoc(request.auth.uid).data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && currentUserData().role == 'admin';
+    }
+
+    function canAddPlaces() {
+      return isSignedIn()
+        && currentUserData().role in ['contributor', 'super_user', 'admin'];
+    }
+
+    function canManagePlace() {
+      return isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    function safeUserRoleUpdate(userId) {
+      return isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'uid',
+          'email',
+        ])
+        && (
+          request.resource.data.role == resource.data.role
+          || request.resource.data.role == 'contributor'
+          || (
+            request.resource.data.role == 'super_user'
+            && request.resource.data.stats.totalContributions >= 10
+            && request.resource.data.stats.averageRating >= 4.3
+            && request.resource.data.stats.reportCount <= 2
+            && request.resource.data.stats.helpfulVotes >= 20
+          )
+        )
+        && request.resource.data.role != 'admin'
+        && request.resource.data.subscription in ['free', 'premium'];
+    }
+
+    function ownsReview() {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    function createsOwnReview(reviewId) {
+      return isSignedIn()
+        && request.auth.uid == reviewId
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == 'regular'
+        && request.resource.data.subscription == 'free';
+      allow read: if isOwner(userId) || isAdmin();
+      allow update: if safeUserRoleUpdate(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /favorites/{placeId} {
+        allow create, read, update, delete: if isOwner(userId);
+      }
+
+      match /locationReminders/{placeId} {
+        allow create, read, update, delete: if isOwner(userId);
+      }
+    }
+
+    match /places/{placeId} {
+      allow read: if true;
+      allow create: if canAddPlaces()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if canManagePlace();
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if createsOwnReview(reviewId);
+        allow update, delete: if ownsReview() || isAdmin();
+      }
+    }
+
+    match /chats/{chatId} {
+      allow read, update: if isSignedIn()
+        && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn()
+        && request.auth.uid in request.resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read, create: if isSignedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+  }
+}
