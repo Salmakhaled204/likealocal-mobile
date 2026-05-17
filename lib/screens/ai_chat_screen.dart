@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
@@ -33,32 +35,23 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   bool _isLoading = false;
 
-  // ── Gemini API settings ─────────────────────────────────────────────────────
-  // Paste your Gemini API key here between the quotes.
-  // Do not write your real API key inside the "if" condition below.
-  static const String _apiKey = 'AIzaSyAJiB16C9K1Pc2a4f4vD57K7EN4-8kOQOM';
+  // User context loaded from Firebase for personalization
+  String _prefCategories = '';
+  String _prefBudget = '';
+  String _prefAtmosphere = '';
+  String _prefArea = '';
+  List<String> _realPlaceLines = [];
+
+  // Pass with: flutter run --dart-define=GEMINI_API_KEY=your_key_here
+  static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   // Free-tier friendly model.
   // If this gives "model not found", try: gemini-2.0-flash
   static const String _modelName = 'gemini-2.0-flash-lite';
 
-  static const String _systemPrompt = '''
-You are LikeALocal's friendly travel assistant. You help users discover authentic local places, hidden gems, restaurants, cafes, and experiences in cities around the world — especially in Cairo, Egypt.
-
-You can:
-- Recommend places based on budget, atmosphere, and category
-- Give local tips and travel advice
-- Suggest what to order or do at specific places
-- Help users understand how to use the LikeALocal app
-- Answer questions about neighbourhoods, best times to visit, and local culture
-
-Keep responses friendly, concise, and practical. Use bullet points for lists. Ask follow-up questions only when needed.
-''';
-
   @override
   void initState() {
     super.initState();
-
     _messages.add(
       ChatMessage(
         text:
@@ -67,6 +60,100 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
         timestamp: DateTime.now(),
       ),
     );
+    _loadUserContext();
+  }
+
+  /// Fetches the user's saved preferences and a sample of real Firestore
+  /// places so the AI system prompt is grounded in actual app data.
+  Future<void> _loadUserContext() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (userDoc.exists) {
+        final d = userDoc.data()!;
+        _prefCategories =
+            (d['preferences'] as List?)?.cast<String>().join(', ') ?? '';
+        _prefBudget = (d['budgetPreference'] ?? '').toString();
+        _prefAtmosphere = (d['atmospherePreference'] ?? '').toString();
+        _prefArea = (d['areaPreference'] ?? '').toString();
+      }
+
+      final placesSnap = await FirebaseFirestore.instance
+          .collection('places')
+          .limit(20)
+          .get();
+
+      _realPlaceLines = placesSnap.docs.map((doc) {
+        final d = doc.data();
+        final name = (d['title'] ?? '').toString();
+        if (name.isEmpty) return '';
+        final parts = <String>[
+          if ((d['category'] ?? '').toString().isNotEmpty)
+            d['category'].toString(),
+          if ((d['address'] ?? '').toString().isNotEmpty)
+            d['address'].toString(),
+          if ((d['budget'] ?? '').toString().isNotEmpty)
+            'budget:${d['budget']}',
+          if ((d['atmosphere'] ?? '').toString().isNotEmpty)
+            'vibe:${d['atmosphere']}',
+        ];
+        return '"$name" — ${parts.join(', ')}';
+      }).where((l) => l.isNotEmpty).toList();
+    } catch (_) {
+      // Silent fail — use generic prompt if Firebase is unreachable
+    }
+  }
+
+  /// Builds the Gemini system prompt, injecting the user's Firebase
+  /// preferences and real places from Firestore when available.
+  String _buildSystemPrompt() {
+    final buf = StringBuffer();
+    buf.writeln(
+      'You are LikeALocal\'s friendly travel assistant. '
+      'Help users discover authentic local places, hidden gems, restaurants, '
+      'cafes, and experiences — especially in Cairo, Egypt.',
+    );
+
+    final hasPrefs = _prefCategories.isNotEmpty ||
+        _prefBudget.isNotEmpty ||
+        _prefAtmosphere.isNotEmpty ||
+        _prefArea.isNotEmpty;
+
+    if (hasPrefs) {
+      buf.writeln('\n== This user\'s preferences (personalise your answers) ==');
+      if (_prefCategories.isNotEmpty) {
+        buf.writeln('- Interests: $_prefCategories');
+      }
+      if (_prefBudget.isNotEmpty) buf.writeln('- Budget: $_prefBudget');
+      if (_prefAtmosphere.isNotEmpty) {
+        buf.writeln('- Preferred vibe: $_prefAtmosphere');
+      }
+      if (_prefArea.isNotEmpty) buf.writeln('- Preferred area: $_prefArea');
+      buf.writeln(
+        'Prioritise recommendations that match these preferences.',
+      );
+    }
+
+    if (_realPlaceLines.isNotEmpty) {
+      buf.writeln('\n== Real places listed in the LikeALocal app ==');
+      for (final line in _realPlaceLines) {
+        buf.writeln('• $line');
+      }
+      buf.writeln(
+        'When relevant, recommend these specific places by name and mention '
+        'they can be found inside the LikeALocal app.',
+      );
+    }
+
+    buf.writeln(
+      '\nKeep responses friendly, concise, and practical. '
+      'Use bullet points for lists. Ask follow-up questions only when needed.',
+    );
+    return buf.toString();
   }
 
   @override
@@ -107,7 +194,7 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     _scrollToBottom();
 
     // If key is missing, use demo mode instead of breaking the app.
-    if (_apiKey == 'PASTE_YOUR_GEMINI_API_KEY_HERE' || _apiKey.trim().isEmpty) {
+    if (_apiKey.trim().isEmpty) {
       _addBotMessage(
         '${_getFallbackReply(text)}\n\nNote: Demo mode is running because the Gemini API key is not added yet.',
       );
@@ -139,7 +226,7 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
         body: jsonEncode({
           'system_instruction': {
             'parts': [
-              {'text': _systemPrompt},
+              {'text': _buildSystemPrompt()},
             ],
           },
           'contents': recentHistory.map((message) {
@@ -150,7 +237,7 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
               ],
             };
           }).toList(),
-          'generationConfig': {'maxOutputTokens': 180, 'temperature': 0.7},
+          'generationConfig': {'maxOutputTokens': 300, 'temperature': 0.7},
         }),
       );
 

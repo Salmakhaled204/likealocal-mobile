@@ -48,11 +48,23 @@ class ChatService {
       final chatRef = firestore.collection('chats').doc(chatId);
       final chatDoc = await chatRef.get();
 
-      // Resolve the other user's display name if not provided
+      // Resolve the other user's display name and check chat privacy
       String resolvedName = otherUserName ?? 'User';
-      if (otherUserName == null) {
-        final userDoc = await firestore.collection('users').doc(otherUserId).get();
-        resolvedName = userDoc.data()?['displayName'] ?? 'User';
+      final userDoc =
+          await firestore.collection('users').doc(otherUserId).get();
+      if (userDoc.exists) {
+        resolvedName =
+            userDoc.data()?['displayName'] ?? resolvedName;
+        final chatEnabled = userDoc.data()?['chatEnabled'] ?? true;
+        if (!chatEnabled) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('This user has turned off messages.')),
+            );
+          }
+          return;
+        }
       }
 
       if (!chatDoc.exists) {

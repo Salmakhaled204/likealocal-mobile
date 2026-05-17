@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../providers/home_provider.dart';
 import '../models/place.dart';
@@ -15,6 +16,7 @@ import 'favorites_screen.dart';
 import 'profile_screen.dart';
 import 'add_place_screen.dart';
 import 'ai_chat_screen.dart';
+import 'chat_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -274,29 +276,37 @@ class _HomeTab extends StatelessWidget {
                         ),
                       ),
                       _IconBtn(
-                        icon: Icons.map_outlined,
+                        icon: Icons.chat_bubble_outline_rounded,
                         color: AppTheme.softBlue,
                         bg: const Color(0xFFE8F1F9),
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const MapScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const ChatListScreen()),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
+                      _NotificationBell(
+                        onTap: () =>
+                            Navigator.pushNamed(context, '/notifications'),
+                      ),
+                      const SizedBox(width: 8),
                       _IconBtn(
                         icon: Icons.auto_awesome_rounded,
                         color: AppTheme.peach,
                         bg: AppTheme.peachLight,
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const AiChatScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const AiChatScreen()),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const ProfileScreen()),
                         ),
                         child: _Avatar(user: user, firstName: firstName),
                       ),
@@ -598,6 +608,79 @@ class _IconBtn extends StatelessWidget {
         decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
         child: Icon(icon, color: color, size: 20),
       ),
+    );
+  }
+}
+
+class _NotificationBell extends StatelessWidget {
+  final VoidCallback onTap;
+  const _NotificationBell({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return _IconBtn(
+        icon: Icons.notifications_none_rounded,
+        color: AppTheme.primary,
+        bg: AppTheme.primaryLight,
+        onTap: onTap,
+      );
+    }
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('notifications')
+          .where('read', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snap) {
+        final unread = snap.data?.docs.length ?? 0;
+        return GestureDetector(
+          onTap: onTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.notifications_none_rounded,
+                  color: AppTheme.primary,
+                  size: 20,
+                ),
+              ),
+              if (unread > 0)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      color: AppTheme.dustyPink,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints:
+                        const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text(
+                      unread > 9 ? '9+' : '$unread',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

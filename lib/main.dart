@@ -5,29 +5,35 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'services/notification_service.dart';
+import 'services/proximity_service.dart';
 import 'theme/app_theme.dart';
-
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   await NotificationService.initialize();
+  // Register the WorkManager callback dispatcher for background proximity checks.
+  // Must be called before runApp so it is ready before any task fires.
+  await Workmanager().initialize(proximityCallbackDispatcher);
   runApp(const MyApp());
 }
+
+final _navigatorKey = GlobalKey<NavigatorState>();
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    NotificationService.navigatorKey = _navigatorKey;
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => HomeProvider()),
@@ -35,8 +41,12 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+        navigatorKey: _navigatorKey,
         theme: AppTheme.theme,
         home: const SplashScreen(),
+        routes: {
+          '/notifications': (_) => const NotificationsScreen(),
+        },
       ),
     );
   }
@@ -174,6 +184,7 @@ class AuthWrapper extends StatelessWidget {
   Future<void> _prepareUser(BuildContext context, User user) async {
     final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await docRef.get();
+    await NotificationService.syncTokenForCurrentUser();
 
     if (!snapshot.exists) {
       await docRef.set({
@@ -229,7 +240,12 @@ class AuthWrapper extends StatelessWidget {
         }
 
         final user = snapshot.data;
-        if (user == null) return const LoginScreen();
+        if (user == null) {
+          ProximityService.stop();
+          return const LoginScreen();
+        }
+
+        ProximityService.start();
 
         return FutureBuilder<void>(
           future: _prepareUser(context, user),
