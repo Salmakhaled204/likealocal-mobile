@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import '../models/user_role.dart';
 
 // ── Data model for a single chat message ─────────────────────────────────────
 class ChatMessage {
@@ -92,6 +95,7 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
     final text = _inputController.text.trim();
 
     if (text.isEmpty || _isLoading) return;
+    if (!await _canUseAiRequest()) return;
 
     setState(() {
       _messages.add(
@@ -181,6 +185,27 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
 
       _scrollToBottom();
     }
+  }
+
+  Future<bool> _canUseAiRequest() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return true;
+    final userRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid);
+    final userDoc = await userRef.get();
+    final role = UserRole.fromData(userDoc.data());
+    if (role.limits.aiRequestsToday >= role.maxAiRequestsPerDay) {
+      _addBotMessage(
+        'You reached your ${role.subscriptionLabel} AI limit for today. Premium users get up to ${UserRole.regularFree().maxAiRequestsPerDay * 10} requests.',
+      );
+      return false;
+    }
+    await userRef.set({
+      'limits': {'aiRequestsToday': FieldValue.increment(1)},
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return true;
   }
 
   String _extractGeminiReply(Map<String, dynamic> data) {

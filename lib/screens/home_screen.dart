@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../providers/home_provider.dart';
 import '../models/place.dart';
+import '../models/user_role.dart';
 import '../theme/app_theme.dart';
 import '../widgets/place_card.dart';
 import '../widgets/shimmer_loading.dart';
@@ -47,23 +48,69 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: IndexedStack(index: _currentIndex, children: _screens),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
-        ),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 6,
-        child: const Icon(Icons.add_rounded, size: 28),
+      floatingActionButton: FutureBuilder<UserRole>(
+        future: uid == null
+            ? Future.value(UserRole.regularFree())
+            : fetchUserRole(uid),
+        builder: (context, snapshot) {
+          final role = snapshot.data ?? UserRole.regularFree();
+          return FloatingActionButton(
+            onPressed: () => _handleAddPlaceTap(context, role),
+            backgroundColor: role.canAddPlaces
+                ? AppTheme.primary
+                : AppTheme.textLight,
+            foregroundColor: Colors.white,
+            elevation: 6,
+            child: Icon(
+              role.canAddPlaces
+                  ? Icons.add_rounded
+                  : Icons.lock_outline_rounded,
+              size: 28,
+            ),
+          );
+        },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _BottomBar(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
+      ),
+    );
+  }
+
+  void _handleAddPlaceTap(BuildContext context, UserRole role) {
+    if (role.canAddPlaces) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Contributor access needed'),
+        content: const Text(
+          'Only Contributors, Super Users, and Admins can add places. Regular users can explore, review, save, chat, and set reminders.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() => _currentIndex = 3);
+            },
+            child: const Text('View profile'),
+          ),
+        ],
       ),
     );
   }
@@ -228,7 +275,9 @@ class _HomeTab extends StatelessWidget {
             final uid = user?.uid;
             final hp = context.read<HomeProvider>();
             await hp.fetchPlaces();
-            if (uid != null) await hp.fetchPersonalizedRecommendationsForUser(uid);
+            if (uid != null) {
+              await hp.fetchPersonalizedRecommendationsForUser(uid);
+            }
           },
           child: CustomScrollView(
             slivers: [
@@ -289,14 +338,18 @@ class _HomeTab extends StatelessWidget {
                         bg: AppTheme.peachLight,
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const AiChatScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const AiChatScreen(),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const ProfileScreen(),
+                          ),
                         ),
                         child: _Avatar(user: user, firstName: firstName),
                       ),
@@ -466,8 +519,9 @@ class _HomeTab extends StatelessWidget {
                             height: 220,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 22),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                              ),
                               itemCount: hp.recommendations.length,
                               itemBuilder: (context, i) {
                                 final place = hp.recommendations[i];
@@ -544,22 +598,19 @@ class _HomeTab extends StatelessWidget {
                   }
 
                   return SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        if (index == hp.places.length) {
-                          return const SizedBox(height: 100);
-                        }
-                        final place = hp.places[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 22),
-                          child: PlaceCard(
-                            place: place,
-                            onTap: () => _goToDetails(context, place),
-                          ),
-                        );
-                      },
-                      childCount: hp.places.length + 1,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      if (index == hp.places.length) {
+                        return const SizedBox(height: 100);
+                      }
+                      final place = hp.places[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        child: PlaceCard(
+                          place: place,
+                          onTap: () => _goToDetails(context, place),
+                        ),
+                      );
+                    }, childCount: hp.places.length + 1),
                   );
                 },
               ),
@@ -705,8 +756,7 @@ class _NearbyCard extends StatelessWidget {
                           height: 125,
                           width: double.infinity,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, err, st) =>
-                              _imgPlaceholder(),
+                          errorBuilder: (context, err, st) => _imgPlaceholder(),
                         )
                       : _imgPlaceholder(),
                   Positioned(
@@ -795,16 +845,12 @@ class _NearbyCard extends StatelessWidget {
   }
 
   Widget _imgPlaceholder() => Container(
-        height: 125,
-        color: AppTheme.surfaceWarm,
-        child: Center(
-          child: Icon(
-            Icons.image_outlined,
-            color: AppTheme.textLight,
-            size: 32,
-          ),
-        ),
-      );
+    height: 125,
+    color: AppTheme.surfaceWarm,
+    child: Center(
+      child: Icon(Icons.image_outlined, color: AppTheme.textLight, size: 32),
+    ),
+  );
 }
 
 class _ErrorState extends StatelessWidget {
@@ -839,10 +885,7 @@ class _ErrorState extends StatelessWidget {
             style: GoogleFonts.poppins(color: AppTheme.textMid, fontSize: 13),
           ),
           const SizedBox(height: 16),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
+          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );

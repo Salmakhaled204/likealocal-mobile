@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/place.dart';
+import '../models/user_role.dart';
 
 class AddPlaceScreen extends StatefulWidget {
   final Place? placeToEdit;
@@ -99,10 +100,26 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   Future<void> _pickImages() async {
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final role = uid == null
+          ? UserRole.regularFree()
+          : await fetchUserRole(uid);
+      final maxUploads = role.maxUploadsPerPlace;
+      final existingCount = _existingImageUrls.length + _selectedImages.length;
+      if (existingCount >= maxUploads) {
+        setState(
+          () => _error =
+              'Your ${role.subscriptionLabel} account can upload $maxUploads images per place.',
+        );
+        return;
+      }
       final List<XFile> images = await _picker.pickMultiImage(imageQuality: 70);
       if (images.isNotEmpty) {
         setState(() {
-          _selectedImages = [..._selectedImages, ...images].take(5).toList();
+          _selectedImages = [
+            ..._selectedImages,
+            ...images,
+          ].take(maxUploads - _existingImageUrls.length).toList();
         });
       }
     } catch (e) {
@@ -280,7 +297,24 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
           .collection('users')
           .doc(user.uid)
           .get();
-      final isSuperUser = userDoc.data()?['isSuperUser'] == true;
+      final role = UserRole.fromData(userDoc.data());
+      if (!role.canAddPlaces) {
+        if (mounted) {
+          setState(
+            () => _error =
+                'Only Contributors, Super Users, and Admins can add or edit places.',
+          );
+        }
+        return;
+      }
+      if (_isEditing &&
+          !role.canManagePlace(widget.placeToEdit!.ownerId, user.uid)) {
+        if (mounted) {
+          setState(() => _error = 'You can only edit places you own.');
+        }
+        return;
+      }
+      final isSuperUser = role.isSuperUser;
       final userName = userDoc.data()?['displayName'] ?? 'Anonymous';
 
       final docRef = _isEditing
@@ -330,11 +364,29 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       });
 
       if (!_isEditing) {
-        // Step 4: Increment contribution count on the user's profile
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({'contributionCount': FieldValue.increment(1)});
+        final nextTotal = role.stats.totalContributions + 1;
+        final promotedRole =
+            UserRole(
+              role: role.role,
+              subscription: role.subscription,
+              stats: UserStats(
+                totalContributions: nextTotal,
+                totalReviews: role.stats.totalReviews,
+                helpfulVotes: role.stats.helpfulVotes,
+                averageRating: role.stats.averageRating,
+                reportCount: role.stats.reportCount,
+              ),
+              limits: role.limits,
+            ).qualifiesForSuperUser
+            ? AppUserRole.superUser
+            : role.role;
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'role': promotedRole,
+          'isSuperUser': promotedRole == AppUserRole.superUser,
+          'contributionCount': FieldValue.increment(1),
+          'stats': {'totalContributions': FieldValue.increment(1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
 
       if (!mounted) return;
@@ -594,12 +646,10 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: (_selectedImages.length >= 5 || _isSaving)
-                    ? null
-                    : _pickImages,
+                onPressed: _isSaving ? null : _pickImages,
                 icon: const Icon(Icons.photo_library),
                 label: Text(
-                  'Pick Images from Gallery (${_selectedImages.length}/5)',
+                  'Pick Images from Gallery (${_selectedImages.length} selected)',
                 ),
               ),
               const SizedBox(height: 20),

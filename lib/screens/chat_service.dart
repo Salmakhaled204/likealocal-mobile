@@ -25,9 +25,9 @@ class ChatService {
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log in to send messages.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Log in to send messages.')));
       return;
     }
 
@@ -40,6 +40,32 @@ class ChatService {
 
     try {
       final firestore = FirebaseFirestore.instance;
+      final otherUserDoc = await firestore
+          .collection('users')
+          .doc(otherUserId)
+          .get();
+      final otherUserData = otherUserDoc.data() ?? {};
+      if (otherUserData['chatEnabled'] == false) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This user is not accepting chats.')),
+        );
+        return;
+      }
+      final schedule = otherUserData['chatSchedule'];
+      if (schedule is Map<String, dynamic> && schedule['enabled'] == true) {
+        final start = (schedule['startTime'] ?? '00:00').toString();
+        final end = (schedule['endTime'] ?? '23:59').toString();
+        if (!_isWithinSchedule(DateTime.now(), start, end)) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('This user is available from $start to $end.'),
+            ),
+          );
+          return;
+        }
+      }
 
       // Check if a chat between these two users already exists.
       // Chat IDs are deterministic: sorted UIDs joined by '_'
@@ -51,8 +77,7 @@ class ChatService {
       // Resolve the other user's display name if not provided
       String resolvedName = otherUserName ?? 'User';
       if (otherUserName == null) {
-        final userDoc = await firestore.collection('users').doc(otherUserId).get();
-        resolvedName = userDoc.data()?['displayName'] ?? 'User';
+        resolvedName = otherUserData['displayName'] ?? 'User';
       }
 
       if (!chatDoc.exists) {
@@ -85,9 +110,29 @@ class ChatService {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open chat. Please try again.')),
+          const SnackBar(
+            content: Text('Could not open chat. Please try again.'),
+          ),
         );
       }
     }
+  }
+
+  static bool _isWithinSchedule(DateTime now, String start, String end) {
+    int parseMinutes(String value) {
+      final parts = value.split(':');
+      if (parts.length != 2) return 0;
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+      return hour * 60 + minute;
+    }
+
+    final current = now.hour * 60 + now.minute;
+    final startMinutes = parseMinutes(start);
+    final endMinutes = parseMinutes(end);
+    if (startMinutes <= endMinutes) {
+      return current >= startMinutes && current <= endMinutes;
+    }
+    return current >= startMinutes || current <= endMinutes;
   }
 }

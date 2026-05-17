@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
+import 'models/user_role.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
@@ -67,9 +68,10 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 800),
     );
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _scale = Tween<double>(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
-    );
+    _scale = Tween<double>(
+      begin: 0.85,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
     _ctrl.forward();
     Future<void>.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) setState(() => _ready = true);
@@ -149,8 +151,8 @@ class _SplashScreenState extends State<SplashScreen>
                         color: i == 0
                             ? AppTheme.primary
                             : i == 1
-                                ? AppTheme.primaryDim
-                                : AppTheme.border,
+                            ? AppTheme.primaryDim
+                            : AppTheme.border,
                         shape: BoxShape.circle,
                       ),
                     );
@@ -176,21 +178,14 @@ class AuthWrapper extends StatelessWidget {
     final snapshot = await docRef.get();
 
     if (!snapshot.exists) {
-      await docRef.set({
-        'email': user.email ?? '',
-        'displayName': user.displayName ?? '',
-        'bio': '',
-        'photoUrl': user.photoURL ?? '',
-        'preferences': <String>[],
-        'budgetPreference': '',
-        'atmospherePreference': '',
-        'areaPreference': '',
-        'chatEnabled': true,
-        'publicProfile': true,
-        'isSuperUser': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await docRef.set(
+        UserRole.defaultFirestoreData(
+          uid: user.uid,
+          email: user.email ?? '',
+          name: user.displayName ?? '',
+          photoUrl: user.photoURL ?? '',
+        ),
+      );
       if (!context.mounted) return;
       context.read<SearchProvider>().setDiscoveryPreferences(
         categories: const [],
@@ -384,21 +379,17 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       final user = cred.user!;
       await user.updateDisplayName(name);
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'email': email,
-        'displayName': name,
-        'bio': '',
-        'photoUrl': '',
-        'preferences': <String>[],
-        'budgetPreference': '',
-        'atmospherePreference': '',
-        'areaPreference': '',
-        'chatEnabled': true,
-        'publicProfile': true,
-        'isSuperUser': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(
+            UserRole.defaultFirestoreData(
+              uid: user.uid,
+              email: email,
+              name: name,
+            ),
+            SetOptions(merge: true),
+          );
     } on FirebaseAuthException catch (e) {
       _setMsg(_authError(e), error: true);
     } catch (_) {
@@ -428,10 +419,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _startLoading() => setState(() {
-        _isLoading = true;
-        _message = '';
-        _isError = false;
-      });
+    _isLoading = true;
+    _message = '';
+    _isError = false;
+  });
 
   void _setMsg(String msg, {required bool error}) {
     if (!mounted) return;
@@ -442,11 +433,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _switchMode(bool login) => setState(() {
-        _isLogin = login;
-        _message = '';
-        _isError = false;
-        _formKey.currentState?.reset();
-      });
+    _isLogin = login;
+    _message = '';
+    _isError = false;
+    _formKey.currentState?.reset();
+  });
 
   String _authError(FirebaseAuthException e) {
     switch (e.code) {
@@ -627,8 +618,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         suffixIcon: _EyeToggle(
                           obscure: _obscureConfirm,
-                          onToggle: () =>
-                              setState(() => _obscureConfirm = !_obscureConfirm),
+                          onToggle: () => setState(
+                            () => _obscureConfirm = !_obscureConfirm,
+                          ),
                         ),
                       ),
                     ),
@@ -667,7 +659,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: _isError ? AppTheme.peachLight : AppTheme.mintLight,
+                        color: _isError
+                            ? AppTheme.peachLight
+                            : AppTheme.mintLight,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _isError
@@ -690,7 +684,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               _message,
                               style: GoogleFonts.poppins(
                                 fontSize: 13,
-                                color: _isError ? AppTheme.peach : AppTheme.mint,
+                                color: _isError
+                                    ? AppTheme.peach
+                                    : AppTheme.mint,
                               ),
                             ),
                           ),
@@ -766,7 +762,11 @@ class _Tab extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
 
-  const _Tab({required this.label, required this.isActive, required this.onTap});
+  const _Tab({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -835,9 +835,7 @@ class _EyeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       icon: Icon(
-        obscure
-            ? Icons.visibility_off_outlined
-            : Icons.visibility_outlined,
+        obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
         size: 20,
         color: AppTheme.textLight,
       ),

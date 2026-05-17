@@ -8,8 +8,10 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
 
     expect(find.text('LikeALocal'), findsOneWidget);
-    expect(find.text('Welcome back!'), findsOneWidget);
+    expect(find.text('Explore cities authentically'), findsOneWidget);
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Sign in'), findsWidgets);
   });
 }
