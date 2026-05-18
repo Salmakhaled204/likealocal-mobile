@@ -1,107 +1,124 @@
 # LikeALocal Mobile
 
-A Flutter app that helps users discover authentic local places, hidden gems, restaurants, and experiences — especially in Cairo, Egypt.
+A Flutter app that helps users discover authentic local places, hidden gems, restaurants, and experiences, especially in Cairo, Egypt.
 
----
-
-## Running the app
+## Running the App
 
 ### Prerequisites
-- Flutter SDK ≥ 3.11
-- Android emulator or physical device
-- Firebase project connected (`google-services.json` in `android/app/`)
 
-### Basic run (demo mode — no AI)
+- Flutter SDK 3.11 or newer
+- Android emulator or physical Android device
+- Firebase CLI for rule deployment and demo seeding
+- Firebase project connected through:
+  - `android/app/google-services.json`
+  - `ios/Runner/GoogleService-Info.plist`
+  - `lib/firebase_options.dart`
+
+### Basic Run
+
 ```bash
+flutter pub get
 flutter run
 ```
 
-The AI assistant falls back to built-in demo replies when no API key is provided.
+The AI assistant falls back to built-in demo replies when no Gemini API key is provided.
 
----
+## Firebase Setup
 
-## Gemini API key setup (enables live AI chat)
+The configured Firebase project is `likealocal-new-bb959`.
 
-The AI chat screen uses the **Gemini API**. The key is injected at build time via `--dart-define` so it is **never stored in source code**.
+Deploy rules before the final demo:
 
-### Step 1 — Get a key
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Click **Create API key** and copy it
-
-### Step 2 — Run with the key
 ```bash
-flutter run --dart-define=GEMINI_API_KEY=YOUR_KEY_HERE
+firebase deploy --only firestore:rules,storage
 ```
 
-### Step 3 — Build release APK with the key
+Included rule files:
+
+- `firestore.rules`
+- `storage.rules`
+- `firebase.json`
+
+## Gemini API Key Setup
+
+The AI chat screen uses Gemini. The key is injected at build time through `--dart-define`, so it is not stored in source code.
+
 ```bash
+flutter run --dart-define=GEMINI_API_KEY=YOUR_KEY_HERE
 flutter build apk --dart-define=GEMINI_API_KEY=YOUR_KEY_HERE
 ```
 
-> **Never** commit the key to git. The `--dart-define` flag keeps it out of source control entirely.
+Never commit the Gemini key to git.
 
-### VS Code launch config (optional)
-Add to `.vscode/launch.json` for convenience:
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "LikeALocal (with AI)",
-      "request": "launch",
-      "type": "dart",
-      "args": ["--dart-define=GEMINI_API_KEY=YOUR_KEY_HERE"]
-    }
-  ]
-}
+## Demo Data
+
+Seed demo places and reviews after logging into Firebase CLI:
+
+```bash
+firebase login
+node scripts/seed_dummy_data.js
 ```
 
----
+Then verify the app from a clean account:
 
-## Features
+```text
+signup -> profile/preferences -> search/filter -> details -> review
+-> favorite -> map/save -> add place with photo/video -> chat
+-> AI -> reminder/proximity notification -> notification history
+```
+
+## Feature Status
 
 | Feature | Status |
 |---|---|
-| Browse & search local places | Done |
+| Browse and search local places | Done |
 | Favorites / saved places | Done |
 | Add a place with photos | Done |
-| Map view | Done |
-| AI chat assistant (Gemini) | Done — requires API key |
-| AI personalized by user profile | Done — reads budget, vibe, area, categories from Firebase |
-| AI grounded in real app places | Done — fetches up to 20 Firestore places into context |
+| Add a place with video | Done |
+| Video playback in details | Done |
+| Map view and save from map | Done |
+| AI chat assistant | Done, requires Gemini key for live AI |
+| AI personalized by user profile | Done |
+| AI grounded in Firestore places | Done |
 | User-to-user chat | Done |
 | Chat list | Done |
-| Push notifications (FCM) | Done |
+| Chat privacy and schedule enforcement | Done |
+| Push notifications | Done |
 | Notification history screen | Done |
-| Proximity notifications (near saved places) | Done — foreground/active app |
-| Chat privacy enforcement | Done — respects `chatEnabled` setting |
+| Notification tap navigation | Done |
+| Proximity notifications near saved places | Done, verify on real Android device |
+| Settings screen | Done |
+| Admin moderation reports | Done |
+| Firestore security rules | Done |
+| Storage security rules | Done |
+| Offline cache | Done for home, search, and favorites |
 
----
+## Background Proximity Notes
 
-## Background proximity notifications — important note
+The proximity service checks every 5 minutes while the app is open and registers an Android WorkManager periodic task for background checks. Android can throttle periodic background work, so validate this on a physical Android device before relying on it in the final live demo.
 
-The proximity service checks every 5 minutes **while the app is open or in the foreground**. True killed-state background location requires native platform work (`WorkManager` on Android / `BGTaskScheduler` on iOS) beyond the Flutter layer. For the demo, open the app and the service runs automatically.
+## Submission Checklist
 
----
+- Run `flutter clean`
+- Run `flutter pub get`
+- Run `flutter analyze`
+- Run `flutter test`
+- Run `flutter build apk --debug`
+- Deploy Firestore and Storage rules
+- Seed or manually create demo data
+- Record the full demo flow from a new account
+- Capture final screenshots for the report
+- Zip the final source code after removing local-only files
 
-## Project structure
+## Project Structure
 
-```
+```text
 lib/
-├── main.dart                  # Entry, auth, splash, navigator key
-├── screens/
-│   ├── home_screen.dart       # Main navigation + notification bell
-│   ├── ai_chat_screen.dart    # Gemini AI assistant
-│   ├── chat_screen.dart       # 1-to-1 messaging
-│   ├── chat_list_screen.dart  # All conversations
-│   ├── notifications_screen.dart  # Notification history
-│   ├── place_details_screen.dart
-│   ├── profile_screen.dart
-│   └── ...
-├── services/
-│   ├── notification_service.dart  # FCM + local notifications
-│   └── proximity_service.dart     # Nearby place alerts
-├── models/place.dart
-├── providers/
-└── theme/app_theme.dart
+  main.dart
+  models/
+  providers/
+  screens/
+  services/
+  theme/
+  widgets/
 ```

@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/place.dart';
 
 class HomeProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const _placesCacheKey = 'cached_home_places';
 
   List<Place> _places = [];
   List<Place> _personalizedRecommendations = [];
@@ -35,13 +39,16 @@ class HomeProvider extends ChangeNotifier {
           }
           return b.averageRating.compareTo(a.averageRating);
         });
+      await _cachePlaces(_places);
     } on FirebaseException catch (e) {
+      _places = await _loadCachedPlaces();
       _errorMessage = _firestoreErrorMessage(
         e,
         'Failed to load places. Please check Firebase setup.',
       );
       if (kDebugMode) print('HomeProvider.fetchPlaces: ${e.code} ${e.message}');
     } catch (e) {
+      _places = await _loadCachedPlaces();
       _errorMessage = 'Failed to load places. Please try again.';
       if (kDebugMode) print('HomeProvider.fetchPlaces: $e');
     } finally {
@@ -49,6 +56,70 @@ class HomeProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> _cachePlaces(List<Place> places) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _placesCacheKey,
+      jsonEncode(places.map(_placeToJson).toList()),
+    );
+  }
+
+  Future<List<Place>> _loadCachedPlaces() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_placesCacheKey);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final items = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      return items.map(_placeFromJson).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Map<String, dynamic> _placeToJson(Place place) => {
+    'id': place.id,
+    'title': place.title,
+    'description': place.description,
+    'category': place.category,
+    'imageUrls': place.imageUrls,
+    'videoUrls': place.videoUrls,
+    'latitude': place.location.latitude,
+    'longitude': place.location.longitude,
+    'address': place.address,
+    'budget': place.budget,
+    'atmosphere': place.atmosphere,
+    'localTip': place.localTip,
+    'recommendedDish': place.recommendedDish,
+    'ownerId': place.ownerId,
+    'ownerName': place.ownerName,
+    'ownerIsSuperUser': place.ownerIsSuperUser,
+    'averageRating': place.averageRating,
+    'reviewCount': place.reviewCount,
+  };
+
+  Place _placeFromJson(Map<String, dynamic> data) => Place(
+    id: data['id'] ?? '',
+    title: data['title'] ?? '',
+    description: data['description'] ?? '',
+    category: data['category'] ?? 'Other',
+    imageUrls: List<String>.from(data['imageUrls'] ?? []),
+    videoUrls: List<String>.from(data['videoUrls'] ?? []),
+    location: GeoPoint(
+      (data['latitude'] as num?)?.toDouble() ?? 0,
+      (data['longitude'] as num?)?.toDouble() ?? 0,
+    ),
+    address: data['address'] ?? '',
+    budget: data['budget'] ?? '',
+    atmosphere: data['atmosphere'] ?? '',
+    localTip: data['localTip'] ?? '',
+    recommendedDish: data['recommendedDish'] ?? '',
+    ownerId: data['ownerId'] ?? '',
+    ownerName: data['createdByName'] ?? data['ownerName'] ?? 'Local contributor',
+    ownerIsSuperUser: data['ownerIsSuperUser'] ?? false,
+    averageRating: (data['averageRating'] as num?)?.toDouble() ?? 0,
+    reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+  );
 
   Future<void> fetchPersonalizedRecommendationsForUser(String uid) async {
     _isLoadingRecommendations = true;

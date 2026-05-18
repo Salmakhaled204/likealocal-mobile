@@ -32,11 +32,13 @@ service cloud.firestore {
         && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
-    function safeUserRoleUpdate(userId) {
+    function safeUserUpdate(userId) {
       return isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'uid',
           'email',
+          'subscription',
+          'isPremium',
         ])
         && (
           request.resource.data.role == resource.data.role
@@ -49,8 +51,7 @@ service cloud.firestore {
             && request.resource.data.stats.helpfulVotes >= 20
           )
         )
-        && request.resource.data.role != 'admin'
-        && request.resource.data.subscription in ['free', 'premium'];
+        && request.resource.data.role != 'admin';
     }
 
     function ownsReview() {
@@ -63,13 +64,41 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid;
     }
 
+    function updatesHelpfulCountOnly() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['helpfulCount']);
+    }
+
+    function updatesHelpfulStatOnly() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stats', 'updatedAt'])
+        && request.resource.data.stats.totalContributions
+          == resource.data.stats.totalContributions
+        && request.resource.data.stats.totalReviews
+          == resource.data.stats.totalReviews
+        && request.resource.data.stats.averageRating
+          == resource.data.stats.averageRating
+        && request.resource.data.stats.reportCount
+          == resource.data.stats.reportCount
+        && (
+          request.resource.data.stats.helpfulVotes
+            == resource.data.stats.helpfulVotes + 1
+          || request.resource.data.stats.helpfulVotes
+            == resource.data.stats.helpfulVotes - 1
+        );
+    }
+
     match /users/{userId} {
       allow create: if isOwner(userId)
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.role == 'regular'
         && request.resource.data.subscription == 'free';
       allow read: if isOwner(userId) || isAdmin();
-      allow update: if safeUserRoleUpdate(userId) || isAdmin();
+      allow update: if safeUserUpdate(userId)
+        || updatesHelpfulStatOnly()
+        || isAdmin();
       allow delete: if isAdmin();
 
       match /favorites/{placeId} {
@@ -77,6 +106,10 @@ service cloud.firestore {
       }
 
       match /locationReminders/{placeId} {
+        allow create, read, update, delete: if isOwner(userId);
+      }
+
+      match /notifications/{notificationId} {
         allow create, read, update, delete: if isOwner(userId);
       }
     }
@@ -90,7 +123,21 @@ service cloud.firestore {
       match /reviews/{reviewId} {
         allow read: if true;
         allow create: if createsOwnReview(reviewId);
-        allow update, delete: if ownsReview() || isAdmin();
+        allow update: if ownsReview() || isAdmin() || updatesHelpfulCountOnly();
+        allow delete: if ownsReview() || isAdmin();
+
+        match /helpfulVotes/{userId} {
+          allow read: if true;
+          allow create, delete: if isOwner(userId);
+          allow update: if false;
+        }
+      }
+
+      match /reports/{reportId} {
+        allow read, update, delete: if isAdmin();
+        allow create: if isSignedIn()
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.placeId == placeId;
       }
     }
 

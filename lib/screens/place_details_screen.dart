@@ -370,6 +370,60 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     }
   }
 
+  Future<void> _reportPlace(Place place) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _snack('Log in to report a place.');
+      return;
+    }
+
+    final reasonCtrl = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report place'),
+        content: TextField(
+          controller: reasonCtrl,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'What should moderators review?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, reasonCtrl.text.trim()),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+    reasonCtrl.dispose();
+    if (reason == null || reason.isEmpty) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('places')
+          .doc(place.id)
+          .collection('reports')
+          .add({
+        'placeId': place.id,
+        'placeTitle': place.title,
+        'reporterId': uid,
+        'reason': reason,
+        'status': 'open',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      _snack('Report sent to moderators.');
+    } catch (_) {
+      _snack('Could not send report.');
+    }
+  }
+
   Future<void> _cleanupPlaceData(Place place) async {
     final db = FirebaseFirestore.instance;
     final placeRef = db.collection('places').doc(_placeId);
@@ -830,6 +884,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                       context,
                       place.ownerId,
                       otherUserName: place.ownerName,
+                      placeId: place.id,
                     )
                   : null,
             ),
@@ -839,6 +894,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
               color: AppTheme.peach,
               bg: AppTheme.peachLight,
               onTap: () => _saveReminder(place),
+            ),
+            _ActionBtn(
+              icon: Icons.flag_outlined,
+              label: 'Report',
+              color: AppTheme.errorColor,
+              bg: const Color(0xFFFDECEC),
+              onTap: () => _reportPlace(place),
             ),
             if (canManage) ...[
               _ActionBtn(

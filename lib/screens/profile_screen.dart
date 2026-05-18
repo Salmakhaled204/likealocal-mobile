@@ -204,26 +204,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _activatePremiumDemo() async {
-    if (_userRole.isPremium) return;
-    await FirebaseFirestore.instance.collection('users').doc(_uid).set({
-      'subscription': AppSubscription.premium,
-      'isPremium': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    if (mounted) {
-      setState(
-        () => _userRole = UserRole.fromData({
-          ..._userRole.toFirestore(),
-          'subscription': AppSubscription.premium,
-        }),
-      );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Premium demo enabled.')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -307,7 +287,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _RoleActions(
                       role: _userRole,
                       onBecomeContributor: _becomeContributor,
-                      onActivatePremium: _activatePremiumDemo,
                     ),
                     const SizedBox(height: 28),
 
@@ -535,6 +514,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    if (_userRole.isAdmin) ...[
+                      GestureDetector(
+                        onTap: () => Navigator.pushNamed(context, '/admin/reports'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.admin_panel_settings_outlined,
+                                  color: Colors.deepPurple, size: 22),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  'Moderation Reports',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded,
+                                  color: Colors.grey, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
 
                     // Settings
                     Text(
@@ -545,6 +556,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/settings'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.settings_outlined,
+                                color: Colors.blueGrey, size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                'Open Settings',
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: Colors.grey, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -843,12 +884,10 @@ class _RoleSummary extends StatelessWidget {
 class _RoleActions extends StatelessWidget {
   final UserRole role;
   final VoidCallback onBecomeContributor;
-  final VoidCallback onActivatePremium;
 
   const _RoleActions({
     required this.role,
     required this.onBecomeContributor,
-    required this.onActivatePremium,
   });
 
   @override
@@ -862,14 +901,14 @@ class _RoleActions extends StatelessWidget {
             icon: const Icon(Icons.add_location_alt_outlined),
             label: const Text('Become a Contributor'),
           ),
-        if (!role.isPremium) ...[
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: onActivatePremium,
-            icon: const Icon(Icons.diamond_outlined),
-            label: const Text('Activate Premium demo'),
+        if (!role.isPremium)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Premium is assigned through Firebase/admin setup, not by a client-side demo toggle.',
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+            ),
           ),
-        ],
         if (role.isAdmin)
           Padding(
             padding: const EdgeInsets.only(top: 8),

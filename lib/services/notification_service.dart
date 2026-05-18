@@ -142,6 +142,24 @@ class NotificationService {
     final nav = navigatorKey?.currentState;
     if (nav == null) return;
 
+    if (payload.startsWith('chat:')) {
+      final parts = payload.split(':');
+      if (parts.length >= 3) {
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              chatId: parts[1],
+              otherUserId: parts[2],
+              otherUserName: parts.length >= 4 && parts[3].isNotEmpty
+                  ? parts.sublist(3).join(':')
+                  : 'User',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     if (payload.startsWith('proximity:')) {
       final placeId = payload.substring('proximity:'.length);
       try {
@@ -228,20 +246,28 @@ class NotificationService {
   static Future<void> syncTokenForCurrentUser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token == null) return;
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'fcmToken': token,
-    });
-    if (kDebugMode) print('FCM token saved: $token');
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'fcmToken': token,
+      });
+      if (kDebugMode) print('FCM token saved: $token');
+    } catch (e) {
+      if (kDebugMode) print('Could not save FCM token: $e');
+    }
   }
 
   static Future<void> _updateToken(String token) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'fcmToken': token,
-    });
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'fcmToken': token,
+      });
+    } catch (e) {
+      if (kDebugMode) print('Could not refresh FCM token: $e');
+    }
   }
 }
 

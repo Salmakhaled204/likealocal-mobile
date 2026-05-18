@@ -22,6 +22,7 @@ class ChatService {
     BuildContext context,
     String otherUserId, {
     String? otherUserName,
+    String? placeId,
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -92,8 +93,11 @@ class ChatService {
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount_${currentUser.uid}': 0,
           'unreadCount_$otherUserId': 0,
+          if (placeId != null) 'placeId': placeId,
           'createdAt': FieldValue.serverTimestamp(),
         });
+      } else if (placeId != null) {
+        await chatRef.set({'placeId': placeId}, SetOptions(merge: true));
       }
     
        if (!context.mounted) return;
