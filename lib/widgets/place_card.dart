@@ -81,8 +81,8 @@ class _PlaceCardState extends State<PlaceCard> with SingleTickerProviderStateMix
                 child: Stack(fit: StackFit.expand, children: [
                   place.imageUrls.isNotEmpty
                       ? CachedNetworkImage(imageUrl: place.imageUrls.first, fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
-                          errorWidget: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient)))
+                          placeholder: (_, _) => Container(color: AppTheme.surfaceWarm),
+                          errorWidget: (_, _, _) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient)))
                       : Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient),
                           child: Center(child: Icon(Icons.image_outlined, color: Colors.white.withValues(alpha: 0.4), size: 30))),
                   if (place.ownerIsSuperUser)

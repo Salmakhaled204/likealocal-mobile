@@ -393,7 +393,7 @@ class _HomeTabState extends State<_HomeTab> {
               ),
 
               // ── Offline banner ─────────────────────────────────────────
-              Consumer<HomeProvider>(builder: (_, hp, __) {
+              Consumer<HomeProvider>(builder: (_, hp, _) {
                 if (!hp.isOffline) return const SliverToBoxAdapter(child: SizedBox.shrink());
                 return SliverToBoxAdapter(
                   child: Container(
@@ -468,7 +468,7 @@ class _HomeTabState extends State<_HomeTab> {
               ),
 
               // ── 2-column grid (matches reference exactly) ──────────────
-              Consumer<HomeProvider>(builder: (_, hp, __) {
+              Consumer<HomeProvider>(builder: (_, hp, _) {
                 if (hp.isLoading) {
                   return SliverToBoxAdapter(child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -634,8 +634,8 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
                   // Image
                   place.imageUrls.isNotEmpty
                       ? CachedNetworkImage(imageUrl: place.imageUrls.first, fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
-                          errorWidget: (_, __, ___) => _imgFallback())
+                          placeholder: (_, _) => Container(color: AppTheme.surfaceWarm),
+                          errorWidget: (_, _, _) => _imgFallback())
                       : _imgFallback(),
                   // Gradient
                   const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(

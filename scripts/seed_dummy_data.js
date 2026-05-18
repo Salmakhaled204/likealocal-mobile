@@ -1,6 +1,31 @@
 const path = require('path');
+const fs = require('fs');
 
-const projectId = 'likealocal-new-bb959';
+function readProjectId() {
+  const repoRoot = path.resolve(__dirname, '..');
+  const firebasercPath = path.join(repoRoot, '.firebaserc');
+  if (fs.existsSync(firebasercPath)) {
+    const firebaserc = JSON.parse(fs.readFileSync(firebasercPath, 'utf8'));
+    const projectId = firebaserc.projects && firebaserc.projects.default;
+    if (projectId) return projectId;
+  }
+
+  const firebaseJsonPath = path.join(repoRoot, 'firebase.json');
+  if (fs.existsSync(firebaseJsonPath)) {
+    const firebaseJson = JSON.parse(fs.readFileSync(firebaseJsonPath, 'utf8'));
+    const projectId =
+      firebaseJson.flutter &&
+      firebaseJson.flutter.platforms &&
+      firebaseJson.flutter.platforms.android &&
+      firebaseJson.flutter.platforms.android.default &&
+      firebaseJson.flutter.platforms.android.default.projectId;
+    if (projectId) return projectId;
+  }
+
+  throw new Error('Could not find Firebase project id in .firebaserc or firebase.json.');
+}
+
+const projectId = process.env.FIREBASE_PROJECT_ID || readProjectId();
 const database = '(default)';
 
 const cliLib = path.join(
