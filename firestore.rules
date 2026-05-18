@@ -157,6 +157,16 @@ service cloud.firestore {
         && request.resource.data.reviewCount == resource.data.reviewCount;
     }
 
+    function ownsReview() {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    function createsOwnReview(reviewId) {
+      return isSignedIn()
+        && request.auth.uid == reviewId
+        && request.resource.data.userId == request.auth.uid;
+    }
+
     function validReviewCreate(reviewId) {
       return createsOwnReview(reviewId)
         && request.resource.data.keys().hasOnly([
@@ -165,6 +175,7 @@ service cloud.firestore {
           'userName',
           'text',
           'rating',
+          'helpfulCount',
           'createdAt',
           'updatedAt',
         ])
@@ -174,6 +185,7 @@ service cloud.firestore {
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
+        && (!('helpfulCount' in request.resource.data) || request.resource.data.helpfulCount == 0)
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
     }
@@ -186,11 +198,13 @@ service cloud.firestore {
           'userName',
           'text',
           'rating',
+          'helpfulCount',
           'createdAt',
           'updatedAt',
         ])
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.helpfulCount == resource.data.helpfulCount
         && isOptionalString(request.resource.data.userEmail, 254)
         && isOptionalString(request.resource.data.userName, 120)
         && isNonEmptyString(request.resource.data.text, 300)
@@ -198,6 +212,14 @@ service cloud.firestore {
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
         && request.resource.data.updatedAt is timestamp;
+    }
+
+    function updatesHelpfulCountOnly() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['helpfulCount'])
+        && request.resource.data.helpfulCount is int
+        && request.resource.data.helpfulCount >= 0;
     }
 
     function validChatCreate() {
@@ -249,16 +271,6 @@ service cloud.firestore {
         && request.resource.data.timestamp is timestamp;
     }
 
-    function ownsReview() {
-      return isSignedIn() && request.auth.uid == resource.data.userId;
-    }
-
-    function createsOwnReview(reviewId) {
-      return isSignedIn()
-        && request.auth.uid == reviewId
-        && request.resource.data.userId == request.auth.uid;
-    }
-
     match /users/{userId} {
       allow create: if isOwner(userId)
         && request.resource.data.uid == request.auth.uid
@@ -275,6 +287,10 @@ service cloud.firestore {
       match /locationReminders/{placeId} {
         allow create, read, update, delete: if isOwner(userId);
       }
+
+      match /notifications/{notificationId} {
+        allow create, read, update, delete: if isOwner(userId);
+      }
     }
 
     match /places/{placeId} {
@@ -286,8 +302,23 @@ service cloud.firestore {
       match /reviews/{reviewId} {
         allow read: if true;
         allow create: if validReviewCreate(reviewId);
-        allow update: if validReviewUpdate() || isAdmin();
+        allow update: if validReviewUpdate()
+          || updatesHelpfulCountOnly()
+          || isAdmin();
         allow delete: if ownsReview() || isAdmin();
+
+        match /helpfulVotes/{userId} {
+          allow read: if true;
+          allow create, delete: if isOwner(userId);
+          allow update: if false;
+        }
+      }
+
+      match /reports/{reportId} {
+        allow read, update, delete: if isAdmin();
+        allow create: if isSignedIn()
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.placeId == placeId;
       }
     }
 

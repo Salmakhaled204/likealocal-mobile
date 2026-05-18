@@ -22,6 +22,7 @@ class ChatService {
     BuildContext context,
     String otherUserId, {
     String? otherUserName,
+    String? placeId,
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -74,7 +75,7 @@ class ChatService {
       final chatRef = firestore.collection('chats').doc(chatId);
       final chatDoc = await chatRef.get();
 
-      // Resolve the other user's display name if not provided
+      // Resolve the other user's display name and check chat privacy
       String resolvedName = otherUserName ?? 'User';
       if (otherUserName == null) {
         resolvedName = otherUserData['displayName'] ?? 'User';
@@ -92,11 +93,14 @@ class ChatService {
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount_${currentUser.uid}': 0,
           'unreadCount_$otherUserId': 0,
+          if (placeId != null) 'placeId': placeId,
           'createdAt': FieldValue.serverTimestamp(),
         });
+      } else if (placeId != null) {
+        await chatRef.set({'placeId': placeId}, SetOptions(merge: true));
       }
-
-      if (!context.mounted) return;
+    
+       if (!context.mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(

@@ -5,12 +5,18 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
+import 'providers/user_provider.dart';
 import 'models/user_role.dart';
 import 'screens/home_screen.dart';
+import 'screens/admin_reports_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/notification_service.dart';
+import 'services/proximity_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -18,23 +24,36 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   await NotificationService.initialize();
+  // Register the WorkManager callback dispatcher for background proximity checks.
+  // Must be called before runApp so it is ready before any task fires.
+  await Workmanager().initialize(proximityCallbackDispatcher);
   runApp(const MyApp());
 }
+
+final _navigatorKey = GlobalKey<NavigatorState>();
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    NotificationService.navigatorKey = _navigatorKey;
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => HomeProvider()),
         ChangeNotifierProvider(create: (_) => SearchProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+        navigatorKey: _navigatorKey,
         theme: AppTheme.theme,
         home: const SplashScreen(),
+        routes: {
+          '/notifications': (_) => const NotificationsScreen(),
+          '/settings': (_) => const SettingsScreen(),
+          '/admin/reports': (_) => const AdminReportsScreen(),
+        },
       ),
     );
   }
@@ -171,8 +190,11 @@ class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
   Future<void> _prepareUser(BuildContext context, User user) async {
+    final userProvider = context.read<UserProvider>();
+    final searchProvider = context.read<SearchProvider>();
     final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await docRef.get();
+    await NotificationService.syncTokenForCurrentUser();
 
     if (!snapshot.exists) {
       await docRef.set(
@@ -184,7 +206,8 @@ class AuthWrapper extends StatelessWidget {
         ),
       );
       if (!context.mounted) return;
-      context.read<SearchProvider>().setDiscoveryPreferences(
+      await userProvider.loadCurrentUser();
+      searchProvider.setDiscoveryPreferences(
         categories: const [],
         budget: '',
         atmosphere: '',
@@ -195,7 +218,8 @@ class AuthWrapper extends StatelessWidget {
 
     final data = snapshot.data() ?? {};
     if (!context.mounted) return;
-    context.read<SearchProvider>().setDiscoveryPreferences(
+    await userProvider.loadCurrentUser();
+    searchProvider.setDiscoveryPreferences(
       categories: List<String>.from(data['preferences'] ?? []),
       budget: (data['budgetPreference'] ?? '').toString(),
       atmosphere: (data['atmospherePreference'] ?? '').toString(),
@@ -221,7 +245,12 @@ class AuthWrapper extends StatelessWidget {
         }
 
         final user = snapshot.data;
-        if (user == null) return const LoginScreen();
+        if (user == null) {
+          ProximityService.stop();
+          return const LoginScreen();
+        }
+
+        ProximityService.start();
 
         return FutureBuilder<void>(
           future: _prepareUser(context, user),

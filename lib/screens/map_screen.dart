@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import '../services/favorite_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -21,6 +22,7 @@ class _MapScreenState extends State<MapScreen> {
   bool isLoadingPlaces = true;
 
   Map<String, dynamic>? selectedPlace;
+  bool selectedPlaceSaved = false;
 
   @override
   void initState() {
@@ -191,7 +193,7 @@ class _MapScreenState extends State<MapScreen> {
                               LatLng(geo.latitude, geo.longitude),
                               16.0,
                             );
-                            setState(() => selectedPlace = place);
+                            _selectPlace(place);
                           },
                         );
                       },
@@ -207,6 +209,42 @@ class _MapScreenState extends State<MapScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Future<void> _selectPlace(Map<String, dynamic> place) async {
+    setState(() => selectedPlace = place);
+    final id = (place['id'] ?? '').toString();
+    if (id.isEmpty) return;
+    final saved = await FavoriteService.isFavorite(id);
+    if (mounted && selectedPlace?['id'] == id) {
+      setState(() => selectedPlaceSaved = saved);
+    }
+  }
+
+  Future<void> _toggleSelectedFavorite() async {
+    final place = selectedPlace;
+    if (place == null) return;
+    final id = (place['id'] ?? '').toString();
+    if (id.isEmpty) return;
+
+    final next = !selectedPlaceSaved;
+    setState(() => selectedPlaceSaved = next);
+    final result = await FavoriteService.togglePlaceData(
+      placeId: id,
+      data: {...place, 'placeId': id},
+      currentlySaved: !next,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.limitReached) {
+      setState(() => selectedPlaceSaved = false);
+      _showSnackbar('Saved-place limit reached.');
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => selectedPlaceSaved = false);
+      _showSnackbar('Log in to save places.');
+    } else if (result == FavoriteResult.failed) {
+      setState(() => selectedPlaceSaved = !next);
+      _showSnackbar('Could not update saved place.');
+    }
+  }
+
   // ── Build place markers ───────────────────────────────────
   List<Marker> _buildPlaceMarkers() {
     return places.map((place) {
@@ -216,7 +254,7 @@ class _MapScreenState extends State<MapScreen> {
         width: 40,
         height: 40,
         child: GestureDetector(
-          onTap: () => setState(() => selectedPlace = place),
+          onTap: () => _selectPlace(place),
           child: const Icon(Icons.location_pin, color: Colors.red, size: 36),
         ),
       );
@@ -362,6 +400,14 @@ class _MapScreenState extends State<MapScreen> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: selectedPlaceSaved ? 'Unsave' : 'Save',
+                  onPressed: _toggleSelectedFavorite,
+                  icon: Icon(
+                    selectedPlaceSaved ? Icons.bookmark : Icons.bookmark_border,
+                    color: selectedPlaceSaved ? Colors.orange : Colors.black54,
                   ),
                 ),
                 GestureDetector(
