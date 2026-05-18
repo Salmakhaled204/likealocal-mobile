@@ -1,11 +1,15 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../models/place.dart';
+import '../models/user_role.dart';
+import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 import 'add_place_screen.dart';
 import 'chat_service.dart';
@@ -68,49 +72,79 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   }
 
   Future<void> _toggleFavorite(Place place) async {
+    final nextValue = !_isFavorite;
+    if (mounted) setState(() => _isFavorite = nextValue);
+    final result = await FavoriteService.togglePlace(
+      place,
+      currentlySaved: !nextValue,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.saved) {
+      _snack('Place saved.');
+    } else if (result == FavoriteResult.removed) {
+      _snack('Place removed from saved.');
+    } else if (result == FavoriteResult.limitReached) {
+      setState(() => _isFavorite = false);
+      _showPremiumDialog();
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFavorite = false);
+      _snack('Log in to save favorites.');
+    } else {
+      setState(() => _isFavorite = !nextValue);
+      _snack('Could not update favorite.');
+    }
+  }
+
+  Future<void> _toggleHelpfulReview(
+    String reviewId,
+    String reviewOwnerId,
+  ) async {
     final uid = _uid;
     if (uid == null) {
-      _snack('Log in to save favorites.');
+      _snack('Log in to mark reviews helpful.');
       return;
     }
-    final ref = FirebaseFirestore.instance
+    if (uid == reviewOwnerId) {
+      _snack('You cannot vote on your own review.');
+      return;
+    }
+
+    final reviewRef = FirebaseFirestore.instance
+        .collection('places')
+        .doc(_placeId)
+        .collection('reviews')
+        .doc(reviewId);
+    final voteRef = reviewRef.collection('helpfulVotes').doc(uid);
+    final userRef = FirebaseFirestore.instance
         .collection('users')
-        .doc(uid)
-        .collection('favorites')
-        .doc(_placeId);
-    final nextValue = !_isFavorite;
+        .doc(reviewOwnerId);
+
     try {
-      if (nextValue) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .get();
-        final isPremium = userDoc.data()?['isPremium'] == true;
-        final current = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('favorites')
-            .limit(6)
-            .get();
-        if (!isPremium && current.docs.length >= 5) {
-          if (mounted) _showPremiumDialog();
-          return;
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final voteDoc = await tx.get(voteRef);
+        if (voteDoc.exists) {
+          tx.delete(voteRef);
+          tx.update(reviewRef, {'helpfulCount': FieldValue.increment(-1)});
+          tx.set(userRef, {
+            'stats': {'helpfulVotes': FieldValue.increment(-1)},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } else {
+          tx.set(voteRef, {
+            'userId': uid,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          tx.set(reviewRef, {
+            'helpfulCount': FieldValue.increment(1),
+          }, SetOptions(merge: true));
+          tx.set(userRef, {
+            'stats': {'helpfulVotes': FieldValue.increment(1)},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
         }
-        if (mounted) setState(() => _isFavorite = true);
-        await ref.set({
-          ...place.toFirestore(),
-          'placeId': _placeId,
-          'savedAt': FieldValue.serverTimestamp(),
-        });
-      } else {
-        if (mounted) setState(() => _isFavorite = false);
-        await ref.delete();
-      }
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() => _isFavorite = !nextValue);
-        _snack('Could not update favorite.');
-      }
+      _snack('Could not update helpful vote.');
     }
   }
 
@@ -118,9 +152,15 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 
   Future<void> _submitReview() async {
     final uid = _uid;
-    if (uid == null) { _snack('Log in to leave a review.'); return; }
+    if (uid == null) {
+      _snack('Log in to leave a review.');
+      return;
+    }
     final text = _reviewCtrl.text.trim();
-    if (text.isEmpty) { _snack('Write a review first.'); return; }
+    if (text.isEmpty) {
+      _snack('Write a review first.');
+      return;
+    }
     setState(() => _isSubmittingReview = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
@@ -133,14 +173,19 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         'userId': uid,
         'userEmail': user.email ?? '',
         'userName': user.displayName ?? '',
+        'placeId': _placeId,
         'text': text,
         'rating': _selectedRating,
+        if (_editingReviewId == null) 'helpfulCount': 0,
         'updatedAt': FieldValue.serverTimestamp(),
         if (_editingReviewId == null) 'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       await _recalcRating();
       _reviewCtrl.clear();
-      setState(() { _editingReviewId = null; _selectedRating = 5; });
+      setState(() {
+        _editingReviewId = null;
+        _selectedRating = 5;
+      });
     } catch (_) {
       _snack('Failed to submit review.');
     } finally {
@@ -155,7 +200,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         title: const Text('Delete review?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Delete', style: TextStyle(color: AppTheme.errorColor)),
@@ -169,18 +217,29 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   Future<void> _deleteReview(String id) async {
     try {
       await FirebaseFirestore.instance
-          .collection('places').doc(_placeId).collection('reviews').doc(id).delete();
+          .collection('places')
+          .doc(_placeId)
+          .collection('reviews')
+          .doc(id)
+          .delete();
       await _recalcRating();
-    } catch (_) { _snack('Failed to delete review.'); }
+    } catch (_) {
+      _snack('Failed to delete review.');
+    }
   }
 
   Future<void> _recalcRating() async {
     final snap = await FirebaseFirestore.instance
-        .collection('places').doc(_placeId).collection('reviews').get();
+        .collection('places')
+        .doc(_placeId)
+        .collection('reviews')
+        .get();
     final avg = snap.docs.isEmpty
         ? 0.0
         : snap.docs.fold<double>(
-                0, (t, d) => t + ((d.data()['rating'] as num?) ?? 0)) /
+                0,
+                (t, d) => t + ((d.data()['rating'] as num?) ?? 0),
+              ) /
               snap.docs.length;
     await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
       'averageRating': avg,
@@ -193,8 +252,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   Future<void> _openDirections(Place place) async {
     final lat = place.location.latitude;
     final lng = place.location.longitude;
-    if (lat == 0 && lng == 0) { _snack('Directions unavailable.'); return; }
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (lat == 0 && lng == 0) {
+      _snack('Directions unavailable.');
+      return;
+    }
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _snack('Could not open maps.');
     }
@@ -202,17 +266,53 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 
   Future<void> _saveReminder(Place place) async {
     final uid = _uid;
-    if (uid == null) { _snack('Log in to set reminders.'); return; }
+    if (uid == null) {
+      _snack('Log in to set reminders.');
+      return;
+    }
     final lat = place.location.latitude;
     final lng = place.location.longitude;
-    if (lat == 0 && lng == 0) { _snack('No location data for reminders.'); return; }
+    if (lat == 0 && lng == 0) {
+      _snack('No location data for reminders.');
+      return;
+    }
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+    final role = UserRole.fromData(userDoc.data());
+    final reminders = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('locationReminders')
+        .limit(role.maxReminders + 1)
+        .get();
+    final alreadySaved = reminders.docs.any((doc) => doc.id == place.id);
+    if (!alreadySaved && reminders.docs.length >= role.maxReminders) {
+      _snack(
+        'You can set up to ${role.maxReminders} reminders on ${role.subscriptionLabel}.',
+      );
+      return;
+    }
     await FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('locationReminders').doc(place.id)
+        .collection('users')
+        .doc(uid)
+        .collection('locationReminders')
+        .doc(place.id)
         .set({
-          'placeId': place.id, 'title': place.title,
-          'location': place.location, 'enabled': true,
-          'radiusMeters': 300, 'createdAt': FieldValue.serverTimestamp(),
+          'placeId': place.id,
+          'title': place.title,
+          'location': place.location,
+          'enabled': true,
+          'radiusMeters': 300,
+          'createdAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+    if (!alreadySaved) {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'limits': {'remindersUsed': FieldValue.increment(1)},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
     try {
       final perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied ||
@@ -221,21 +321,37 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         return;
       }
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
-      final dist = Geolocator.distanceBetween(pos.latitude, pos.longitude, lat, lng);
-      _snack(dist <= 300 ? 'Reminder saved. You\'re already nearby!' : 'Reminder saved!');
-    } catch (_) { _snack('Reminder saved.'); }
+      final dist = Geolocator.distanceBetween(
+        pos.latitude,
+        pos.longitude,
+        lat,
+        lng,
+      );
+      _snack(
+        dist <= 300
+            ? 'Reminder saved. You\'re already nearby!'
+            : 'Reminder saved!',
+      );
+    } catch (_) {
+      _snack('Reminder saved.');
+    }
   }
 
-  Future<void> _deletePlace() async {
+  Future<void> _deletePlace(Place place) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete place?'),
         content: const Text('This removes the place for everyone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Delete', style: TextStyle(color: AppTheme.errorColor)),
@@ -245,11 +361,69 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     );
     if (ok != true) return;
     try {
-      await FirebaseFirestore.instance.collection('places').doc(_placeId).delete();
+      await _cleanupPlaceData(place);
       if (!mounted) return;
       Navigator.pop(context);
       _snack('Place deleted.');
-    } catch (_) { _snack('Could not delete this place.'); }
+    } catch (_) {
+      _snack('Could not delete this place.');
+    }
+  }
+
+  Future<void> _cleanupPlaceData(Place place) async {
+    final db = FirebaseFirestore.instance;
+    final placeRef = db.collection('places').doc(_placeId);
+    final batch = db.batch();
+
+    final reviews = await placeRef.collection('reviews').get();
+    for (final review in reviews.docs) {
+      final votes = await review.reference.collection('helpfulVotes').get();
+      for (final vote in votes.docs) {
+        batch.delete(vote.reference);
+      }
+      batch.delete(review.reference);
+    }
+
+    final favorites = await db
+        .collectionGroup('favorites')
+        .where('placeId', isEqualTo: _placeId)
+        .get();
+    for (final favorite in favorites.docs) {
+      batch.delete(favorite.reference);
+      final userRef = favorite.reference.parent.parent;
+      if (userRef != null) {
+        batch.set(userRef, {
+          'limits': {'pinsUsed': FieldValue.increment(-1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    final reminders = await db
+        .collectionGroup('locationReminders')
+        .where('placeId', isEqualTo: _placeId)
+        .get();
+    for (final reminder in reminders.docs) {
+      batch.delete(reminder.reference);
+      final userRef = reminder.reference.parent.parent;
+      if (userRef != null) {
+        batch.set(userRef, {
+          'limits': {'remindersUsed': FieldValue.increment(-1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    batch.delete(placeRef);
+    await batch.commit();
+
+    for (final url in [...place.imageUrls, ...place.videoUrls]) {
+      try {
+        await FirebaseStorage.instance.refFromURL(url).delete();
+      } catch (_) {
+        // Ignore media cleanup failures so the Firestore delete still succeeds.
+      }
+    }
   }
 
   void _showPremiumDialog() {
@@ -257,21 +431,32 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Upgrade to Premium'),
-        content: const Text('Free accounts can save up to 5 places. Premium coming soon.'),
+        content: const Text(
+          'You reached your saved-place limit. Free users can save 5 places, Super Users can save 20, and Premium users can save 100.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
         ],
       ),
     );
   }
 
   void _startEditing(String id, String text, int rating) {
-    setState(() { _editingReviewId = id; _selectedRating = rating; });
+    setState(() {
+      _editingReviewId = id;
+      _selectedRating = rating;
+    });
     _reviewCtrl.text = text;
   }
 
   void _cancelEditing() {
-    setState(() { _editingReviewId = null; _selectedRating = 5; });
+    setState(() {
+      _editingReviewId = null;
+      _selectedRating = 5;
+    });
     _reviewCtrl.clear();
   }
 
@@ -292,7 +477,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('places').doc(_placeId).snapshots(),
+          .collection('places')
+          .doc(_placeId)
+          .snapshots(),
       builder: (context, snapshot) {
         final place = snapshot.hasData && snapshot.data!.exists
             ? Place.fromFirestore(snapshot.data!)
@@ -326,6 +513,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                       ),
                       const SizedBox(height: 24),
                       _buildLocalDetails(place),
+                      if (place.videoUrls.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Videos',
+                          child: _VideoGallery(videoUrls: place.videoUrls),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       _buildReviews(),
                     ],
@@ -385,7 +579,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                   icon: _isFavorite
                       ? Icons.favorite_rounded
                       : Icons.favorite_border_rounded,
-                  iconColor: _isFavorite ? AppTheme.dustyPink : AppTheme.textMid,
+                  iconColor: _isFavorite
+                      ? AppTheme.dustyPink
+                      : AppTheme.textMid,
                   onTap: () => _toggleFavorite(place),
                 ),
         ),
@@ -463,7 +659,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.star_rounded, color: Colors.white, size: 14),
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.white,
+                        size: 14,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Super User Pick',
@@ -538,12 +738,19 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(Icons.location_on_rounded, size: 15, color: AppTheme.dustyPink),
+              Icon(
+                Icons.location_on_rounded,
+                size: 15,
+                color: AppTheme.dustyPink,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   place.address,
-                  style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textLight),
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: AppTheme.textLight,
+                  ),
                 ),
               ),
             ],
@@ -598,101 +805,122 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   // ── Quick actions ─────────────────────────────────────────────────────────
 
   Widget _buildActions(BuildContext context, Place place) {
-    final isOwner = _uid != null && _uid == place.ownerId;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _ActionBtn(
-          icon: Icons.chat_bubble_outline_rounded,
-          label: 'Message owner',
-          color: AppTheme.softBlue,
-          bg: const Color(0xFFE8F1F9),
-          onTap: place.ownerId.isEmpty
-              ? null
-              : () => ChatService.startChat(
-                    context,
-                    place.ownerId,
-                    otherUserName: place.ownerName,
-                  ),
-        ),
-        _ActionBtn(
-          icon: Icons.notifications_active_outlined,
-          label: 'Remind me',
-          color: AppTheme.peach,
-          bg: AppTheme.peachLight,
-          onTap: () => _saveReminder(place),
-        ),
-        if (isOwner) ...[
-          _ActionBtn(
-            icon: Icons.edit_outlined,
-            label: 'Edit',
-            color: AppTheme.primary,
-            bg: AppTheme.primaryLight,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AddPlaceScreen(placeToEdit: place),
-              ),
+    final uid = _uid;
+    return FutureBuilder<UserRole>(
+      future: uid == null
+          ? Future.value(UserRole.regularFree())
+          : fetchUserRole(uid),
+      builder: (context, snapshot) {
+        final role = snapshot.data ?? UserRole.regularFree();
+        final canManage =
+            uid != null && role.canManagePlace(place.ownerId, uid);
+        final canMessageOwner =
+            uid != null && place.ownerId.isNotEmpty && place.ownerId != uid;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _ActionBtn(
+              icon: Icons.chat_bubble_outline_rounded,
+              label: 'Message owner',
+              color: AppTheme.softBlue,
+              bg: const Color(0xFFE8F1F9),
+              onTap: canMessageOwner
+                  ? () => ChatService.startChat(
+                      context,
+                      place.ownerId,
+                      otherUserName: place.ownerName,
+                    )
+                  : null,
             ),
-          ),
-          _ActionBtn(
-            icon: Icons.delete_outline_rounded,
-            label: 'Delete',
-            color: AppTheme.errorColor,
-            bg: const Color(0xFFFDECEC),
-            onTap: _deletePlace,
-          ),
-        ],
-      ],
+            _ActionBtn(
+              icon: Icons.notifications_active_outlined,
+              label: 'Remind me',
+              color: AppTheme.peach,
+              bg: AppTheme.peachLight,
+              onTap: () => _saveReminder(place),
+            ),
+            if (canManage) ...[
+              _ActionBtn(
+                icon: Icons.edit_outlined,
+                label: role.isAdmin ? 'Admin edit' : 'Edit',
+                color: AppTheme.primary,
+                bg: AppTheme.primaryLight,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AddPlaceScreen(placeToEdit: place),
+                  ),
+                ),
+              ),
+              _ActionBtn(
+                icon: Icons.delete_outline_rounded,
+                label: role.isAdmin ? 'Admin delete' : 'Delete',
+                color: AppTheme.errorColor,
+                bg: const Color(0xFFFDECEC),
+                onTap: () => _deletePlace(place),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
   // ── Local details ─────────────────────────────────────────────────────────
 
   Widget _buildLocalDetails(Place place) {
-    final rows = <({IconData icon, Color iconColor, Color iconBg, String label, String value})>[
-      if (place.budget.isNotEmpty)
-        (
-          icon: Icons.payments_outlined,
-          iconColor: AppTheme.mint,
-          iconBg: AppTheme.mintLight,
-          label: 'Budget',
-          value: place.budget,
-        ),
-      if (place.atmosphere.isNotEmpty)
-        (
-          icon: Icons.groups_outlined,
-          iconColor: AppTheme.softBlue,
-          iconBg: const Color(0xFFE8F1F9),
-          label: 'Vibe',
-          value: place.atmosphere,
-        ),
-      if (place.localTip.isNotEmpty)
-        (
-          icon: Icons.lightbulb_outline,
-          iconColor: AppTheme.amber,
-          iconBg: const Color(0xFFFDF6E3),
-          label: 'Local tip',
-          value: place.localTip,
-        ),
-      if (place.recommendedDish.isNotEmpty)
-        (
-          icon: Icons.restaurant_menu_outlined,
-          iconColor: AppTheme.peach,
-          iconBg: AppTheme.peachLight,
-          label: 'Must try',
-          value: place.recommendedDish,
-        ),
-      if (place.ownerName.isNotEmpty)
-        (
-          icon: Icons.person_outline_rounded,
-          iconColor: AppTheme.primary,
-          iconBg: AppTheme.primaryLight,
-          label: 'Contributor',
-          value: place.ownerName,
-        ),
-    ];
+    final rows =
+        <
+          ({
+            IconData icon,
+            Color iconColor,
+            Color iconBg,
+            String label,
+            String value,
+          })
+        >[
+          if (place.budget.isNotEmpty)
+            (
+              icon: Icons.payments_outlined,
+              iconColor: AppTheme.mint,
+              iconBg: AppTheme.mintLight,
+              label: 'Budget',
+              value: place.budget,
+            ),
+          if (place.atmosphere.isNotEmpty)
+            (
+              icon: Icons.groups_outlined,
+              iconColor: AppTheme.softBlue,
+              iconBg: const Color(0xFFE8F1F9),
+              label: 'Vibe',
+              value: place.atmosphere,
+            ),
+          if (place.localTip.isNotEmpty)
+            (
+              icon: Icons.lightbulb_outline,
+              iconColor: AppTheme.amber,
+              iconBg: const Color(0xFFFDF6E3),
+              label: 'Local tip',
+              value: place.localTip,
+            ),
+          if (place.recommendedDish.isNotEmpty)
+            (
+              icon: Icons.restaurant_menu_outlined,
+              iconColor: AppTheme.peach,
+              iconBg: AppTheme.peachLight,
+              label: 'Must try',
+              value: place.recommendedDish,
+            ),
+          if (place.ownerName.isNotEmpty)
+            (
+              icon: Icons.person_outline_rounded,
+              iconColor: AppTheme.primary,
+              iconBg: AppTheme.primaryLight,
+              label: 'Contributor',
+              value: place.ownerName,
+            ),
+        ];
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
@@ -785,7 +1013,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
             children: [
               Text(
                 canReview
-                    ? _editingReviewId != null ? 'Edit your review' : 'Leave a review'
+                    ? _editingReviewId != null
+                          ? 'Edit your review'
+                          : 'Leave a review'
                     : 'Log in to leave a review',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w600,
@@ -908,11 +1138,18 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
             return Column(
               children: snapshot.data!.docs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                final isOwner = data['userId'] == _uid;
+                final reviewOwnerId = (data['userId'] as String?) ?? '';
+                final isOwner = reviewOwnerId == _uid;
                 final rating = (data['rating'] as num?)?.toInt() ?? 0;
+                final helpfulCount =
+                    (data['helpfulCount'] as num?)?.toInt() ?? 0;
                 final name = ((data['userName'] as String?) ?? '').trim();
                 final email = ((data['userEmail'] as String?) ?? '').trim();
-                final label = name.isNotEmpty ? name : email.isNotEmpty ? email : 'Anonymous';
+                final label = name.isNotEmpty
+                    ? name
+                    : email.isNotEmpty
+                    ? email
+                    : 'Anonymous';
                 final date = _fmtDate(data['updatedAt'] ?? data['createdAt']);
 
                 return Container(
@@ -992,7 +1229,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                             PopupMenuButton<String>(
                               onSelected: (v) {
                                 if (v == 'edit') {
-                                  _startEditing(doc.id, data['text'] ?? '', rating);
+                                  _startEditing(
+                                    doc.id,
+                                    data['text'] ?? '',
+                                    rating,
+                                  );
                                 } else {
                                   _confirmDeleteReview(doc.id);
                                 }
@@ -1002,14 +1243,18 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                                   value: 'edit',
                                   child: Text(
                                     'Edit',
-                                    style: GoogleFonts.poppins(color: AppTheme.textDark),
+                                    style: GoogleFonts.poppins(
+                                      color: AppTheme.textDark,
+                                    ),
                                   ),
                                 ),
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: Text(
                                     'Delete',
-                                    style: GoogleFonts.poppins(color: AppTheme.errorColor),
+                                    style: GoogleFonts.poppins(
+                                      color: AppTheme.errorColor,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1029,6 +1274,16 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                           color: AppTheme.textMid,
                           height: 1.6,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      _HelpfulButton(
+                        placeId: _placeId,
+                        reviewId: doc.id,
+                        reviewOwnerId: reviewOwnerId,
+                        currentUserId: _uid,
+                        count: helpfulCount,
+                        onTap: () =>
+                            _toggleHelpfulReview(doc.id, reviewOwnerId),
                       ),
                     ],
                   ),
@@ -1076,6 +1331,196 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 }
 
 // ── Sub-widgets ──────────────────────────────────────────────────────────────
+
+class _HelpfulButton extends StatelessWidget {
+  final String placeId;
+  final String reviewId;
+  final String reviewOwnerId;
+  final String? currentUserId;
+  final int count;
+  final VoidCallback onTap;
+
+  const _HelpfulButton({
+    required this.placeId,
+    required this.reviewId,
+    required this.reviewOwnerId,
+    required this.currentUserId,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUserId == null || currentUserId == reviewOwnerId) {
+      return _HelpfulPill(isActive: false, count: count, onTap: null);
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('places')
+          .doc(placeId)
+          .collection('reviews')
+          .doc(reviewId)
+          .collection('helpfulVotes')
+          .doc(currentUserId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        return _HelpfulPill(
+          isActive: snapshot.data?.exists ?? false,
+          count: count,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+class _HelpfulPill extends StatelessWidget {
+  final bool isActive;
+  final int count;
+  final VoidCallback? onTap;
+
+  const _HelpfulPill({
+    required this.isActive,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? AppTheme.primaryLight : AppTheme.surfaceWarm,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: isActive ? AppTheme.primaryDim : AppTheme.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isActive
+                    ? Icons.thumb_up_alt_rounded
+                    : Icons.thumb_up_alt_outlined,
+                size: 14,
+                color: isActive ? AppTheme.primary : AppTheme.textLight,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '$count helpful',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: isActive ? AppTheme.primary : AppTheme.textMid,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoGallery extends StatelessWidget {
+  final List<String> videoUrls;
+
+  const _VideoGallery({required this.videoUrls});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: videoUrls
+          .map(
+            (url) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _VideoPlayerCard(url: url),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _VideoPlayerCard extends StatefulWidget {
+  final String url;
+
+  const _VideoPlayerCard({required this.url});
+
+  @override
+  State<_VideoPlayerCard> createState() => _VideoPlayerCardState();
+}
+
+class _VideoPlayerCardState extends State<_VideoPlayerCard> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: _ready ? _controller.value.aspectRatio : 16 / 9,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(color: AppTheme.surfaceWarm),
+            if (_ready)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _controller.value.isPlaying
+                        ? _controller.pause()
+                        : _controller.play();
+                  });
+                },
+                child: VideoPlayer(_controller),
+              )
+            else
+              const CircularProgressIndicator(color: AppTheme.primary),
+            if (_ready && !_controller.value.isPlaying)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  shape: BoxShape.circle,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _Section extends StatelessWidget {
   final String title;

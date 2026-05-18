@@ -2,13 +2,74 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/place.dart';
+import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 
-class PlaceCard extends StatelessWidget {
+class PlaceCard extends StatefulWidget {
   final Place place;
   final VoidCallback onTap;
 
   const PlaceCard({super.key, required this.place, required this.onTap});
+
+  @override
+  State<PlaceCard> createState() => _PlaceCardState();
+}
+
+class _PlaceCardState extends State<PlaceCard> {
+  bool _isFavorite = false;
+  bool _isFavoriteLoading = true;
+
+  Place get place => widget.place;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorite();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.place.id != widget.place.id) _loadFavorite();
+  }
+
+  Future<void> _loadFavorite() async {
+    setState(() => _isFavoriteLoading = true);
+    final saved = await FavoriteService.isFavorite(widget.place.id);
+    if (mounted) {
+      setState(() {
+        _isFavorite = saved;
+        _isFavoriteLoading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isFavoriteLoading) return;
+    final next = !_isFavorite;
+    setState(() => _isFavorite = next);
+    final result = await FavoriteService.togglePlace(
+      widget.place,
+      currentlySaved: !next,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.limitReached) {
+      setState(() => _isFavorite = false);
+      _snack('Saved-place limit reached.');
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFavorite = false);
+      _snack('Log in to save places.');
+    } else if (result == FavoriteResult.failed) {
+      setState(() => _isFavorite = !next);
+      _snack('Could not update saved place.');
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   // Pick a soft accent per category for variety
   static Color _accentFor(String category) {
@@ -24,7 +85,9 @@ class PlaceCard extends StatelessWidget {
   static Color _accentLightFor(String category) {
     final c = category.toLowerCase();
     if (c.contains('cafe') || c.contains('coffee')) return AppTheme.mintLight;
-    if (c.contains('restaurant') || c.contains('food')) return AppTheme.peachLight;
+    if (c.contains('restaurant') || c.contains('food')) {
+      return AppTheme.peachLight;
+    }
     if (c.contains('nightlife') || c.contains('bar')) {
       return const Color(0xFFF9EEF2);
     }
@@ -40,7 +103,7 @@ class PlaceCard extends StatelessWidget {
     final accentLight = _accentLightFor(place.category);
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 18),
         decoration: BoxDecoration(
@@ -153,6 +216,43 @@ class PlaceCard extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                Positioned(
+                  bottom: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: _toggleFavorite,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: _isFavoriteLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(11),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _isFavorite
+                                  ? Icons.bookmark_rounded
+                                  : Icons.bookmark_border_rounded,
+                              color: _isFavorite
+                                  ? AppTheme.primary
+                                  : AppTheme.textMid,
+                              size: 20,
+                            ),
+                    ),
+                  ),
+                ),
 
                 // Rating badge
                 Positioned(
@@ -313,10 +413,7 @@ class _MetaChip extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: AppTheme.textMid,
-              ),
+              style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textMid),
             ),
           ),
         ],

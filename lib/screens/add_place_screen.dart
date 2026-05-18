@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/place.dart';
+import '../models/user_role.dart';
 
 class AddPlaceScreen extends StatefulWidget {
   final Place? placeToEdit;
@@ -16,6 +17,40 @@ class AddPlaceScreen extends StatefulWidget {
 
   @override
   State<AddPlaceScreen> createState() => _AddPlaceScreenState();
+}
+
+class _VideoPickedTile extends StatelessWidget {
+  final String label;
+  final VoidCallback? onRemove;
+
+  const _VideoPickedTile({required this.label, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.play_circle_outline, color: Colors.blueGrey),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: onRemove,
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AddPlaceScreenState extends State<AddPlaceScreen> {
@@ -52,7 +87,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   ];
 
   List<XFile> _selectedImages = [];
+  List<XFile> _selectedVideos = [];
   List<String> _existingImageUrls = [];
+  List<String> _existingVideoUrls = [];
   final ImagePicker _picker = ImagePicker();
 
   LatLng? _pickedLocation;
@@ -83,6 +120,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     _latitudeController.text = place.location.latitude.toStringAsFixed(6);
     _longitudeController.text = place.location.longitude.toStringAsFixed(6);
     _existingImageUrls = List<String>.from(place.imageUrls);
+    _existingVideoUrls = List<String>.from(place.videoUrls);
   }
 
   @override
@@ -99,14 +137,53 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   Future<void> _pickImages() async {
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final role = uid == null
+          ? UserRole.regularFree()
+          : await fetchUserRole(uid);
+      final maxUploads = role.maxUploadsPerPlace;
+      final existingCount = _existingImageUrls.length + _selectedImages.length;
+      if (existingCount >= maxUploads) {
+        setState(
+          () => _error =
+              'Your ${role.subscriptionLabel} account can upload $maxUploads images per place.',
+        );
+        return;
+      }
       final List<XFile> images = await _picker.pickMultiImage(imageQuality: 70);
       if (images.isNotEmpty) {
         setState(() {
-          _selectedImages = [..._selectedImages, ...images].take(5).toList();
+          _selectedImages = [
+            ..._selectedImages,
+            ...images,
+          ].take(maxUploads - _existingImageUrls.length).toList();
         });
       }
     } catch (e) {
       setState(() => _error = 'Could not pick images.');
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final hasVideo =
+          _existingVideoUrls.isNotEmpty || _selectedVideos.isNotEmpty;
+      if (hasVideo) {
+        setState(() => _error = 'You can attach one video per place.');
+        return;
+      }
+      final video = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 2),
+      );
+      if (video != null) {
+        setState(() {
+          _selectedVideos = [video];
+          _error = null;
+        });
+      }
+    } catch (_) {
+      setState(() => _error = 'Could not pick video.');
     }
   }
 
@@ -252,6 +329,26 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     return urls;
   }
 
+  Future<List<String>> _uploadVideos(String placeId) async {
+    final List<String> urls = [];
+
+    for (int i = 0; i < _selectedVideos.length; i++) {
+      final file = File(_selectedVideos[i].path);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.mp4';
+      final ref = FirebaseStorage.instance.ref().child(
+        'places/$placeId/videos/$fileName',
+      );
+
+      final uploadTask = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'video/mp4'),
+      );
+      urls.add(await uploadTask.ref.getDownloadURL());
+    }
+
+    return urls;
+  }
+
   Future<void> _savePlace() async {
     if (!_formKey.currentState!.validate()) return;
     if (_pickedLocation == null) {
@@ -280,7 +377,24 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
           .collection('users')
           .doc(user.uid)
           .get();
-      final isSuperUser = userDoc.data()?['isSuperUser'] == true;
+      final role = UserRole.fromData(userDoc.data());
+      if (!role.canAddPlaces) {
+        if (mounted) {
+          setState(
+            () => _error =
+                'Only Contributors, Super Users, and Admins can add or edit places.',
+          );
+        }
+        return;
+      }
+      if (_isEditing &&
+          !role.canManagePlace(widget.placeToEdit!.ownerId, user.uid)) {
+        if (mounted) {
+          setState(() => _error = 'You can only edit places you own.');
+        }
+        return;
+      }
+      final isSuperUser = role.isSuperUser;
       final userName = userDoc.data()?['displayName'] ?? 'Anonymous';
 
       final docRef = _isEditing
@@ -298,7 +412,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'recommendedDish': _recommendedDishController.text.trim(),
         'address': _addressController.text.trim(),
         'imageUrls': <String>[], // placeholder — updated after upload
-        'videoUrls': <String>[],
+        'videoUrls': _existingVideoUrls,
         'location': GeoPoint(
           _pickedLocation!.latitude,
           _pickedLocation!.longitude,
@@ -323,18 +437,38 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
       // Step 2: Upload images using the document ID as the storage folder
       final imageUrls = await _uploadImages(docRef.id);
+      final videoUrls = await _uploadVideos(docRef.id);
 
       // Step 3: Update the document with the real download URLs
       await docRef.update({
         'imageUrls': [..._existingImageUrls, ...imageUrls],
+        'videoUrls': [..._existingVideoUrls, ...videoUrls],
       });
 
       if (!_isEditing) {
-        // Step 4: Increment contribution count on the user's profile
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({'contributionCount': FieldValue.increment(1)});
+        final nextTotal = role.stats.totalContributions + 1;
+        final promotedRole =
+            UserRole(
+              role: role.role,
+              subscription: role.subscription,
+              stats: UserStats(
+                totalContributions: nextTotal,
+                totalReviews: role.stats.totalReviews,
+                helpfulVotes: role.stats.helpfulVotes,
+                averageRating: role.stats.averageRating,
+                reportCount: role.stats.reportCount,
+              ),
+              limits: role.limits,
+            ).qualifiesForSuperUser
+            ? AppUserRole.superUser
+            : role.role;
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'role': promotedRole,
+          'isSuperUser': promotedRole == AppUserRole.superUser,
+          'contributionCount': FieldValue.increment(1),
+          'stats': {'totalContributions': FieldValue.increment(1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
 
       if (!mounted) return;
@@ -492,6 +626,36 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+              const Text(
+                'Video (optional)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              const SizedBox(height: 8),
+              if (_existingVideoUrls.isNotEmpty)
+                _VideoPickedTile(
+                  label: 'Uploaded video',
+                  onRemove: _isSaving
+                      ? null
+                      : () => setState(() => _existingVideoUrls.clear()),
+                ),
+              if (_selectedVideos.isNotEmpty)
+                _VideoPickedTile(
+                  label: _selectedVideos.first.name,
+                  onRemove: _isSaving
+                      ? null
+                      : () => setState(() => _selectedVideos.clear()),
+                ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _isSaving ? null : _pickVideo,
+                icon: const Icon(Icons.video_library_outlined),
+                label: Text(
+                  _selectedVideos.isEmpty && _existingVideoUrls.isEmpty
+                      ? 'Pick Video from Gallery'
+                      : 'Video selected',
+                ),
+              ),
+              const SizedBox(height: 20),
 
               // ── Images ───────────────────────────────────────────────────
               const Text(
@@ -594,12 +758,10 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: (_selectedImages.length >= 5 || _isSaving)
-                    ? null
-                    : _pickImages,
+                onPressed: _isSaving ? null : _pickImages,
                 icon: const Icon(Icons.photo_library),
                 label: Text(
-                  'Pick Images from Gallery (${_selectedImages.length}/5)',
+                  'Pick Images from Gallery (${_selectedImages.length} selected)',
                 ),
               ),
               const SizedBox(height: 20),

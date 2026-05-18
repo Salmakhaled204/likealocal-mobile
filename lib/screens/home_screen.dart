@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../providers/home_provider.dart';
 import '../models/place.dart';
+import '../models/user_role.dart';
+import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/place_card.dart';
 import '../widgets/shimmer_loading.dart';
@@ -49,23 +51,69 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: IndexedStack(index: _currentIndex, children: _screens),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
-        ),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 6,
-        child: const Icon(Icons.add_rounded, size: 28),
+      floatingActionButton: FutureBuilder<UserRole>(
+        future: uid == null
+            ? Future.value(UserRole.regularFree())
+            : fetchUserRole(uid),
+        builder: (context, snapshot) {
+          final role = snapshot.data ?? UserRole.regularFree();
+          return FloatingActionButton(
+            onPressed: () => _handleAddPlaceTap(context, role),
+            backgroundColor: role.canAddPlaces
+                ? AppTheme.primary
+                : AppTheme.textLight,
+            foregroundColor: Colors.white,
+            elevation: 6,
+            child: Icon(
+              role.canAddPlaces
+                  ? Icons.add_rounded
+                  : Icons.lock_outline_rounded,
+              size: 28,
+            ),
+          );
+        },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _BottomBar(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
+      ),
+    );
+  }
+
+  void _handleAddPlaceTap(BuildContext context, UserRole role) {
+    if (role.canAddPlaces) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AddPlaceScreen()),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Contributor access needed'),
+        content: const Text(
+          'Only Contributors, Super Users, and Admins can add places. Regular users can explore, review, save, chat, and set reminders.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() => _currentIndex = 3);
+            },
+            child: const Text('View profile'),
+          ),
+        ],
       ),
     );
   }
@@ -230,7 +278,9 @@ class _HomeTab extends StatelessWidget {
             final uid = user?.uid;
             final hp = context.read<HomeProvider>();
             await hp.fetchPlaces();
-            if (uid != null) await hp.fetchPersonalizedRecommendationsForUser(uid);
+            if (uid != null) {
+              await hp.fetchPersonalizedRecommendationsForUser(uid);
+            }
           },
           child: CustomScrollView(
             slivers: [
@@ -298,7 +348,8 @@ class _HomeTab extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const AiChatScreen()),
+                            builder: (_) => const AiChatScreen(),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -306,7 +357,8 @@ class _HomeTab extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const ProfileScreen()),
+                            builder: (_) => const ProfileScreen(),
+                          ),
                         ),
                         child: _Avatar(user: user, firstName: firstName),
                       ),
@@ -476,8 +528,9 @@ class _HomeTab extends StatelessWidget {
                             height: 220,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 22),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                              ),
                               itemCount: hp.recommendations.length,
                               itemBuilder: (context, i) {
                                 final place = hp.recommendations[i];
@@ -554,22 +607,19 @@ class _HomeTab extends StatelessWidget {
                   }
 
                   return SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        if (index == hp.places.length) {
-                          return const SizedBox(height: 100);
-                        }
-                        final place = hp.places[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 22),
-                          child: PlaceCard(
-                            place: place,
-                            onTap: () => _goToDetails(context, place),
-                          ),
-                        );
-                      },
-                      childCount: hp.places.length + 1,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      if (index == hp.places.length) {
+                        return const SizedBox(height: 100);
+                      }
+                      final place = hp.places[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        child: PlaceCard(
+                          place: place,
+                          onTap: () => _goToDetails(context, place),
+                        ),
+                      );
+                    }, childCount: hp.places.length + 1),
                   );
                 },
               ),
@@ -755,16 +805,69 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _NearbyCard extends StatelessWidget {
+class _NearbyCard extends StatefulWidget {
   final Place place;
   final VoidCallback onTap;
 
   const _NearbyCard({required this.place, required this.onTap});
 
   @override
+  State<_NearbyCard> createState() => _NearbyCardState();
+}
+
+class _NearbyCardState extends State<_NearbyCard> {
+  bool _isFavorite = false;
+  bool _isLoading = true;
+
+  Place get place => widget.place;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorite();
+  }
+
+  Future<void> _loadFavorite() async {
+    final saved = await FavoriteService.isFavorite(widget.place.id);
+    if (mounted) {
+      setState(() {
+        _isFavorite = saved;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isLoading) return;
+    final next = !_isFavorite;
+    setState(() => _isFavorite = next);
+    final result = await FavoriteService.togglePlace(
+      widget.place,
+      currentlySaved: !next,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.limitReached) {
+      setState(() => _isFavorite = false);
+      _snack('Saved-place limit reached.');
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFavorite = false);
+      _snack('Log in to save places.');
+    } else if (result == FavoriteResult.failed) {
+      setState(() => _isFavorite = !next);
+      _snack('Could not update saved place.');
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         width: 165,
         margin: const EdgeInsets.only(right: 14),
@@ -788,23 +891,29 @@ class _NearbyCard extends StatelessWidget {
                           height: 125,
                           width: double.infinity,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, err, st) =>
-                              _imgPlaceholder(),
+                          errorBuilder: (context, err, st) => _imgPlaceholder(),
                         )
                       : _imgPlaceholder(),
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.favorite_border_rounded,
-                        color: AppTheme.dustyPink,
-                        size: 14,
+                    child: GestureDetector(
+                      onTap: _toggleFavorite,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isFavorite
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_border_rounded,
+                          color: _isFavorite
+                              ? AppTheme.primary
+                              : AppTheme.dustyPink,
+                          size: 14,
+                        ),
                       ),
                     ),
                   ),
@@ -878,16 +987,12 @@ class _NearbyCard extends StatelessWidget {
   }
 
   Widget _imgPlaceholder() => Container(
-        height: 125,
-        color: AppTheme.surfaceWarm,
-        child: Center(
-          child: Icon(
-            Icons.image_outlined,
-            color: AppTheme.textLight,
-            size: 32,
-          ),
-        ),
-      );
+    height: 125,
+    color: AppTheme.surfaceWarm,
+    child: Center(
+      child: Icon(Icons.image_outlined, color: AppTheme.textLight, size: 32),
+    ),
+  );
 }
 
 class _ErrorState extends StatelessWidget {
@@ -922,10 +1027,7 @@ class _ErrorState extends StatelessWidget {
             style: GoogleFonts.poppins(color: AppTheme.textMid, fontSize: 13),
           ),
           const SizedBox(height: 16),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
+          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../models/user_role.dart';
 import '../providers/search_provider.dart';
 import 'chat_list_screen.dart';
 
@@ -43,13 +44,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'Friends',
     'Romantic',
   ];
+  final List<String> _timeOptions = const [
+    '08:00',
+    '09:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+  ];
 
   List<String> _selectedPreferences = [];
   String _budgetPreference = '';
   String _atmospherePreference = '';
   bool _chatEnabled = true;
+  bool _chatScheduleEnabled = false;
+  String _chatStartTime = '10:00';
+  String _chatEndTime = '18:00';
   bool _publicProfile = true;
   bool _aiRecommendationsEnabled = true;
+  UserRole _userRole = UserRole.regularFree();
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
@@ -84,26 +105,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _atmospherePreference = data['atmospherePreference'] ?? '';
         _areaController.text = data['areaPreference'] ?? '';
         _chatEnabled = data['chatEnabled'] ?? true;
+        final schedule = data['chatSchedule'];
+        if (schedule is Map<String, dynamic>) {
+          _chatScheduleEnabled = schedule['enabled'] == true;
+          _chatStartTime = (schedule['startTime'] ?? '10:00').toString();
+          _chatEndTime = (schedule['endTime'] ?? '18:00').toString();
+        }
         _publicProfile = data['publicProfile'] ?? true;
         _aiRecommendationsEnabled = data['aiRecommendationsEnabled'] ?? true;
+        _userRole = UserRole.fromData(data);
       } else {
         final user = FirebaseAuth.instance.currentUser!;
-        await FirebaseFirestore.instance.collection('users').doc(_uid).set({
-          'email': user.email ?? '',
-          'displayName': user.displayName ?? '',
-          'bio': '',
-          'photoUrl': user.photoURL ?? '',
-          'preferences': <String>[],
-          'budgetPreference': '',
-          'atmospherePreference': '',
-          'areaPreference': '',
-          'aiRecommendationsEnabled': true,
-          'chatEnabled': true,
-          'publicProfile': true,
-          'isSuperUser': false,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_uid)
+            .set(
+              UserRole.defaultFirestoreData(
+                uid: _uid,
+                email: user.email ?? '',
+                name: user.displayName ?? '',
+                photoUrl: user.photoURL ?? '',
+              ),
+            );
       }
     } catch (e) {
       _error = 'Failed to load profile';
@@ -132,6 +155,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'areaPreference': _areaController.text.trim(),
         'aiRecommendationsEnabled': _aiRecommendationsEnabled,
         'chatEnabled': _chatEnabled,
+        'chatSchedule': {
+          'enabled': _chatScheduleEnabled,
+          'startTime': _chatStartTime,
+          'endTime': _chatEndTime,
+        },
         'publicProfile': _publicProfile,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -152,6 +180,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _error = 'Failed to save. Please try again.');
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _becomeContributor() async {
+    if (_userRole.isAdmin || _userRole.isContributor || _userRole.isSuperUser) {
+      return;
+    }
+    await FirebaseFirestore.instance.collection('users').doc(_uid).set({
+      'role': AppUserRole.contributor,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (mounted) {
+      setState(
+        () => _userRole = UserRole.fromData({
+          ..._userRole.toFirestore(),
+          'role': AppUserRole.contributor,
+        }),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Contributor access enabled.')),
+      );
+    }
+  }
+
+  Future<void> _activatePremiumDemo() async {
+    if (_userRole.isPremium) return;
+    await FirebaseFirestore.instance.collection('users').doc(_uid).set({
+      'subscription': AppSubscription.premium,
+      'isPremium': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (mounted) {
+      setState(
+        () => _userRole = UserRole.fromData({
+          ..._userRole.toFirestore(),
+          'subscription': AppSubscription.premium,
+        }),
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Premium demo enabled.')));
     }
   }
 
@@ -231,6 +300,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           fontSize: 13,
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    _RoleSummary(role: _userRole),
+                    const SizedBox(height: 12),
+                    _RoleActions(
+                      role: _userRole,
+                      onBecomeContributor: _becomeContributor,
+                      onActivatePremium: _activatePremiumDemo,
                     ),
                     const SizedBox(height: 28),
 
@@ -534,6 +611,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 12),
                     Container(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'Chat availability schedule',
+                              style: GoogleFonts.inter(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              'Only allow chats during your available hours',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            value: _chatScheduleEnabled,
+                            onChanged: (val) =>
+                                setState(() => _chatScheduleEnabled = val),
+                          ),
+                          if (_chatScheduleEnabled)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _chatStartTime,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Start',
+                                    ),
+                                    items: _timeOptions
+                                        .map(
+                                          (time) => DropdownMenuItem(
+                                            value: time,
+                                            child: Text(time),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (value) => setState(
+                                      () => _chatStartTime = value ?? '10:00',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _chatEndTime,
+                                    decoration: const InputDecoration(
+                                      labelText: 'End',
+                                    ),
+                                    items: _timeOptions
+                                        .map(
+                                          (time) => DropdownMenuItem(
+                                            value: time,
+                                            child: Text(time),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (value) => setState(
+                                      () => _chatEndTime = value ?? '18:00',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
@@ -605,6 +756,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _RoleSummary extends StatelessWidget {
+  final UserRole role;
+
+  const _RoleSummary({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = role.isAdmin
+        ? Colors.red[700]!
+        : role.isSuperUser
+        ? Colors.amber[700]!
+        : role.isPremium
+        ? Colors.purple[600]!
+        : role.isContributor
+        ? Colors.green[700]!
+        : Colors.blue[700]!;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.withValues(alpha: 0.15),
+            child: Icon(_roleIcon(role), color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  role.label,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  role.benefitText,
+                  style: GoogleFonts.inter(
+                    color: Colors.grey[700],
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pins ${role.limits.pinsUsed}/${role.maxPins} | Reminders ${role.limits.remindersUsed}/${role.maxReminders} | AI/day ${role.maxAiRequestsPerDay}',
+                  style: GoogleFonts.inter(
+                    color: Colors.grey[600],
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _roleIcon(UserRole role) {
+    if (role.isAdmin) return Icons.admin_panel_settings_outlined;
+    if (role.isSuperUser) return Icons.workspace_premium;
+    if (role.isPremium) return Icons.diamond_outlined;
+    if (role.isContributor) return Icons.add_location_alt_outlined;
+    return Icons.person_outline;
+  }
+}
+
+class _RoleActions extends StatelessWidget {
+  final UserRole role;
+  final VoidCallback onBecomeContributor;
+  final VoidCallback onActivatePremium;
+
+  const _RoleActions({
+    required this.role,
+    required this.onBecomeContributor,
+    required this.onActivatePremium,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (role.isRegular)
+          OutlinedButton.icon(
+            onPressed: onBecomeContributor,
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('Become a Contributor'),
+          ),
+        if (!role.isPremium) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onActivatePremium,
+            icon: const Icon(Icons.diamond_outlined),
+            label: const Text('Activate Premium demo'),
+          ),
+        ],
+        if (role.isAdmin)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Admin access is assigned manually in Firebase and cannot be edited here.',
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ),
+      ],
     );
   }
 }

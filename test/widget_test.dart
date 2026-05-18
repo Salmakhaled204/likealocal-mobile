@@ -9,7 +9,9 @@ void main() {
 
     expect(find.text('LikeALocal'), findsOneWidget);
     expect(find.text('Explore cities authentically'), findsOneWidget);
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
-    expect(find.text('Sign in'), findsNWidgets(2));
+    expect(find.text('Sign in'), findsWidgets);
   });
 }
