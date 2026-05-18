@@ -10,6 +10,7 @@ const _kCachedRecommendations = 'cached_recommendations_v1';
 
 class HomeProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const _placesCacheKey = 'cached_home_places';
 
   List<Place> _places = [];
   List<Place> _personalizedRecommendations = [];
@@ -170,6 +171,7 @@ class HomeProvider extends ChangeNotifier {
       if (kDebugMode) print('HomeProvider.fetchPlaces: ${e.code} ${e.message}');
       await _fallbackToCache();
     } catch (e) {
+      _places = await _loadCachedPlaces();
       _errorMessage = 'Failed to load places. Please try again.';
       if (kDebugMode) print('HomeProvider.fetchPlaces: $e');
       await _fallbackToCache();

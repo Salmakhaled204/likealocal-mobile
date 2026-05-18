@@ -64,6 +64,19 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
+    final schedule = recipientDoc.data()?['chatSchedule'];
+    if (schedule is Map<String, dynamic> && schedule['enabled'] == true) {
+      final start = (schedule['startTime'] ?? '00:00').toString();
+      final end = (schedule['endTime'] ?? '23:59').toString();
+      if (!_isWithinSchedule(DateTime.now(), start, end)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('This user is available from $start to $end.')),
+          );
+        }
+        return;
+      }
+    }
 
     _controller.clear();
 
@@ -71,20 +84,30 @@ class _ChatScreenState extends State<ChatScreen> {
     final now = FieldValue.serverTimestamp();
     final chatRef = FirebaseFirestore.instance.collection('chats').doc(widget.chatId);
 
-    // Add the message to the subcollection
-    await chatRef.collection('messages').add({
-      'senderId': _uid,
-      'senderName': user.displayName ?? '',
-      'text': text,
-      'timestamp': now,
-    });
+    try {
+      // Add the message to the subcollection
+      await chatRef.collection('messages').add({
+        'senderId': _uid,
+        'senderName': user.displayName ?? '',
+        'text': text,
+        'timestamp': now,
+      });
 
-    // Update the chat's metadata (last message + unread counter for recipient)
-    await chatRef.update({
-      'lastMessage': text,
-      'lastMessageTime': now,
-      'unreadCount_${widget.otherUserId}': FieldValue.increment(1),
-    });
+      // Update the chat's metadata (last message + unread counter for recipient)
+      await chatRef.update({
+        'lastMessage': text,
+        'lastMessageTime': now,
+        'unreadCount_${widget.otherUserId}': FieldValue.increment(1),
+      });
+    } catch (_) {
+      _controller.text = text;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message failed. Check your connection.')),
+        );
+      }
+      return;
+    }
 
     // Scroll to bottom
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -96,6 +119,23 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  bool _isWithinSchedule(DateTime now, String start, String end) {
+    int minutes(String value) {
+      final parts = value.split(':');
+      final hour = int.tryParse(parts.first) ?? 0;
+      final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+      return hour * 60 + minute;
+    }
+
+    final current = now.hour * 60 + now.minute;
+    final startMinutes = minutes(start);
+    final endMinutes = minutes(end);
+    if (startMinutes <= endMinutes) {
+      return current >= startMinutes && current <= endMinutes;
+    }
+    return current >= startMinutes || current <= endMinutes;
   }
 
   String _formatTime(Timestamp? ts) {

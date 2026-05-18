@@ -9,9 +9,12 @@ import 'package:workmanager/workmanager.dart';
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
+import 'providers/user_provider.dart';
 import 'models/user_role.dart';
 import 'screens/home_screen.dart';
+import 'screens/admin_reports_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/notification_service.dart';
 import 'services/proximity_service.dart';
 import 'theme/app_theme.dart';
@@ -39,6 +42,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => HomeProvider()),
         ChangeNotifierProvider(create: (_) => SearchProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -47,6 +51,8 @@ class MyApp extends StatelessWidget {
         home: const SplashScreen(),
         routes: {
           '/notifications': (_) => const NotificationsScreen(),
+          '/settings': (_) => const SettingsScreen(),
+          '/admin/reports': (_) => const AdminReportsScreen(),
         },
       ),
     );
@@ -198,6 +204,7 @@ class AuthWrapper extends StatelessWidget {
         ),
       );
       if (!context.mounted) return;
+      await context.read<UserProvider>().loadCurrentUser();
       context.read<SearchProvider>().setDiscoveryPreferences(
         categories: const [],
         budget: '',
@@ -209,6 +216,7 @@ class AuthWrapper extends StatelessWidget {
 
     final data = snapshot.data() ?? {};
     if (!context.mounted) return;
+    await context.read<UserProvider>().loadCurrentUser();
     context.read<SearchProvider>().setDiscoveryPreferences(
       categories: List<String>.from(data['preferences'] ?? []),
       budget: (data['budgetPreference'] ?? '').toString(),
