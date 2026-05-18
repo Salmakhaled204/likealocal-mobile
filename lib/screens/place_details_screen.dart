@@ -391,6 +391,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     return '${d.day}/${d.month}/${d.year}';
   }
 
+  // ── Open video URL in browser ─────────────────────────────────────────────
+  Future<void> _openVideo(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _snack('Could not open video.');
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -432,6 +440,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      // ── MISS-070: Video playback section ─────────────────
+                      if (place.videoUrls.isNotEmpty) ...[
+                        _buildVideos(place),
+                        const SizedBox(height: 24),
+                      ],
                       _buildLocalDetails(place),
                       const SizedBox(height: 24),
                       _buildReviews(),
@@ -522,7 +535,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 ),
               ),
             ),
-            // Soft gradient at bottom
             const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -670,7 +682,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           ),
         ],
         const SizedBox(height: 14),
-        // Rating
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
@@ -777,6 +788,87 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           ],
         );
       },
+    );
+  }
+
+  // ── MISS-070: Videos section ──────────────────────────────────────────────
+
+  Widget _buildVideos(Place place) {
+    return _Section(
+      title: 'Videos',
+      child: Column(
+        children: place.videoUrls.asMap().entries.map((entry) {
+          final index = entry.key;
+          final url = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.softShadow,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => _openVideo(url),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      // Play button icon
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryLight,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.play_circle_filled_rounded,
+                          color: AppTheme.primary,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Video ${index + 1}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tap to play',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: AppTheme.textLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        size: 18,
+                        color: AppTheme.textLight,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -911,8 +1003,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           ),
         ),
         const SizedBox(height: 14),
-
-        // Write review card
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -1017,9 +1107,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
-
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('places')
@@ -1047,7 +1135,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 ),
               );
             }
-
             return Column(
               children: snapshot.data!.docs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
@@ -1061,7 +1148,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                     ? email
                     : 'Anonymous';
                 final date = _fmtDate(data['updatedAt'] ?? data['createdAt']);
-
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(16),

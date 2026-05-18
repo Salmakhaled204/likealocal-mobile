@@ -54,6 +54,11 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   List<XFile> _selectedImages = [];
   List<String> _existingImageUrls = [];
+
+  // ── VIDEO STATE ──────────────────────────────────────────────────────────
+  List<XFile> _selectedVideos = [];
+  List<String> _existingVideoUrls = [];
+
   final ImagePicker _picker = ImagePicker();
 
   LatLng? _pickedLocation;
@@ -63,6 +68,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   // Upload progress tracking
   int _uploadedCount = 0;
+  int _totalUploadCount = 0;
 
   bool get _isEditing => widget.placeToEdit != null;
 
@@ -84,6 +90,8 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     _latitudeController.text = place.location.latitude.toStringAsFixed(6);
     _longitudeController.text = place.location.longitude.toStringAsFixed(6);
     _existingImageUrls = List<String>.from(place.imageUrls);
+    // ── load existing videos when editing ───────────────────────────────
+    _existingVideoUrls = List<String>.from(place.videoUrls);
   }
 
   @override
@@ -124,6 +132,26 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       }
     } catch (e) {
       setState(() => _error = 'Could not pick images.');
+    }
+  }
+
+  // ── PICK VIDEO ───────────────────────────────────────────────────────────
+  Future<void> _pickVideo() async {
+    try {
+      final totalVideos = _existingVideoUrls.length + _selectedVideos.length;
+      if (totalVideos >= 2) {
+        setState(() => _error = 'Maximum 2 videos allowed per place.');
+        return;
+      }
+      final XFile? video = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 2),
+      );
+      if (video != null) {
+        setState(() => _selectedVideos.add(video));
+      }
+    } catch (e) {
+      setState(() => _error = 'Could not pick video.');
     }
   }
 
@@ -242,10 +270,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     );
   }
 
-  // ── Upload all selected images to Firebase Storage ──────────────────────
+  // ── Upload all selected images to Firebase Storage ───────────────────────
   Future<List<String>> _uploadImages(String placeId) async {
     final List<String> urls = [];
-    setState(() => _uploadedCount = 0);
 
     for (int i = 0; i < _selectedImages.length; i++) {
       final file = File(_selectedImages[i].path);
@@ -262,8 +289,33 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       final downloadUrl = await uploadTask.ref.getDownloadURL();
       urls.add(downloadUrl);
 
-      // Update progress counter so UI shows "Uploading 2/3…"
-      setState(() => _uploadedCount = i + 1);
+      setState(() => _uploadedCount++);
+    }
+
+    return urls;
+  }
+
+  // ── Upload all selected videos to Firebase Storage ───────────────────────
+  Future<List<String>> _uploadVideos(String placeId) async {
+    final List<String> urls = [];
+
+    for (int i = 0; i < _selectedVideos.length; i++) {
+      final file = File(_selectedVideos[i].path);
+      final fileName =
+          'video_${DateTime.now().millisecondsSinceEpoch}_$i.mp4';
+      final ref = FirebaseStorage.instance.ref().child(
+        'places/$placeId/videos/$fileName',
+      );
+
+      final uploadTask = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'video/mp4'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      urls.add(downloadUrl);
+
+      setState(() => _uploadedCount++);
     }
 
     return urls;
@@ -290,6 +342,8 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       _isSaving = true;
       _error = null;
       _uploadedCount = 0;
+      _totalUploadCount =
+          _selectedImages.length + _selectedVideos.length;
     });
 
     try {
@@ -322,6 +376,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 .collection('places')
                 .doc(widget.placeToEdit!.id)
           : FirebaseFirestore.instance.collection('places').doc();
+
       final placeData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -331,8 +386,8 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'localTip': _localTipController.text.trim(),
         'recommendedDish': _recommendedDishController.text.trim(),
         'address': _addressController.text.trim(),
-        'imageUrls': <String>[], // placeholder — updated after upload
-        'videoUrls': <String>[],
+        'imageUrls': _existingImageUrls, // placeholder — updated after upload
+        'videoUrls': _existingVideoUrls, // placeholder — updated after upload
         'location': GeoPoint(
           _pickedLocation!.latitude,
           _pickedLocation!.longitude,
@@ -347,20 +402,22 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      placeData['imageUrls'] = _existingImageUrls;
-
       if (_isEditing) {
         await docRef.update(placeData);
       } else {
         await docRef.set(placeData);
       }
 
-      // Step 2: Upload images using the document ID as the storage folder
+      // Step 2: Upload images → get URLs
       final imageUrls = await _uploadImages(docRef.id);
 
-      // Step 3: Update the document with the real download URLs
+      // Step 3: Upload videos → get URLs
+      final videoUrls = await _uploadVideos(docRef.id);
+
+      // Step 4: Update Firestore with real download URLs
       await docRef.update({
         'imageUrls': [..._existingImageUrls, ...imageUrls],
+        'videoUrls': [..._existingVideoUrls, ...videoUrls],
       });
 
       if (!_isEditing) {
@@ -654,6 +711,68 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
               ),
               const SizedBox(height: 20),
 
+              // ── Videos ───────────────────────────────────────────────────
+              const Text(
+                'Videos (optional, max 2)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              const SizedBox(height: 8),
+
+              // Show existing video chips (when editing)
+              if (_existingVideoUrls.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _existingVideoUrls.asMap().entries.map((entry) {
+                    return Chip(
+                      avatar: const Icon(Icons.videocam, size: 16),
+                      label: Text('Saved Video ${entry.key + 1}'),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: _isSaving
+                          ? null
+                          : () => setState(
+                                () => _existingVideoUrls.removeAt(entry.key),
+                              ),
+                    );
+                  }).toList(),
+                ),
+              if (_existingVideoUrls.isNotEmpty) const SizedBox(height: 8),
+
+              // Show newly selected video chips
+              if (_selectedVideos.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _selectedVideos.asMap().entries.map((entry) {
+                    return Chip(
+                      avatar: const Icon(
+                        Icons.videocam,
+                        size: 16,
+                        color: Colors.green,
+                      ),
+                      label: Text('New Video ${entry.key + 1}'),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: _isSaving
+                          ? null
+                          : () => setState(
+                                () => _selectedVideos.removeAt(entry.key),
+                              ),
+                    );
+                  }).toList(),
+                ),
+              if (_selectedVideos.isNotEmpty) const SizedBox(height: 8),
+
+              OutlinedButton.icon(
+                onPressed: _isSaving ? null : _pickVideo,
+                icon: const Icon(Icons.videocam),
+                label: Text(
+                  (_existingVideoUrls.length + _selectedVideos.length) >= 2
+                      ? 'Max videos reached (2/2)'
+                      : 'Pick Video from Gallery (${_selectedVideos.length} selected)',
+                ),
+              ),
+              const SizedBox(height: 20),
+
               // ── Location ─────────────────────────────────────────────────
               const Text(
                 'Location *',
@@ -742,10 +861,12 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                       : const Icon(Icons.add_location_alt),
                   label: Text(
                     _isSaving
-                        ? _uploadedCount == 0
-                              ? 'Saving place…'
-                              : 'Uploading images ($_uploadedCount/${_selectedImages.length})…'
-                        : 'Add Place',
+                        ? _totalUploadCount == 0
+                            ? 'Saving place…'
+                            : 'Uploading files ($_uploadedCount/$_totalUploadCount)…'
+                        : _isEditing
+                            ? 'Save Changes'
+                            : 'Add Place',
                     style: const TextStyle(fontSize: 16),
                   ),
                 ),
