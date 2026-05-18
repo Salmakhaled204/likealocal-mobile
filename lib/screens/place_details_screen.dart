@@ -1,8 +1,10 @@
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,18 +19,19 @@ import 'chat_service.dart';
 class PlaceDetailsScreen extends StatefulWidget {
   final Place place;
   const PlaceDetailsScreen({super.key, required this.place});
-
   @override
   State<PlaceDetailsScreen> createState() => _PlaceDetailsScreenState();
 }
 
-class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
+class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
+    with SingleTickerProviderStateMixin {
   final _reviewCtrl = TextEditingController();
   int _selectedRating = 5;
   bool _isFavorite = false;
   bool _isFavoriteLoading = true;
   bool _isSubmittingReview = false;
   String? _editingReviewId;
+  late final TabController _tabCtrl;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
   String get _placeId => widget.place.id;
@@ -36,161 +39,76 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabCtrl = TabController(length: 4, vsync: this);
     _checkFavorite();
   }
 
   @override
-  void dispose() {
-    _reviewCtrl.dispose();
-    super.dispose();
-  }
-
-  // ── Favorite ──────────────────────────────────────────────────────────────
+  void dispose() { _reviewCtrl.dispose(); _tabCtrl.dispose(); super.dispose(); }
 
   Future<void> _checkFavorite() async {
     final uid = _uid;
-    if (uid == null) {
-      setState(() => _isFavoriteLoading = false);
-      return;
-    }
+    if (uid == null) { setState(() => _isFavoriteLoading = false); return; }
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('favorites')
-          .doc(_placeId)
-          .get();
-      if (mounted) {
-        setState(() {
-          _isFavorite = doc.exists;
-          _isFavoriteLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isFavoriteLoading = false);
-    }
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).collection('favorites').doc(_placeId).get();
+      if (mounted) setState(() { _isFavorite = doc.exists; _isFavoriteLoading = false; });
+    } catch (_) { if (mounted) setState(() => _isFavoriteLoading = false); }
   }
 
   Future<void> _toggleFavorite(Place place) async {
-    final nextValue = !_isFavorite;
-    if (mounted) setState(() => _isFavorite = nextValue);
-    final result = await FavoriteService.togglePlace(
-      place,
-      currentlySaved: !nextValue,
-    );
+    final next = !_isFavorite;
+    if (mounted) setState(() => _isFavorite = next);
+    final result = await FavoriteService.togglePlace(place, currentlySaved: !next);
     if (!mounted) return;
-    if (result == FavoriteResult.saved) {
-      _snack('Place saved.');
-    } else if (result == FavoriteResult.removed) {
-      _snack('Place removed from saved.');
-    } else if (result == FavoriteResult.limitReached) {
-      setState(() => _isFavorite = false);
-      _showPremiumDialog();
-    } else if (result == FavoriteResult.loginRequired) {
-      setState(() => _isFavorite = false);
-      _snack('Log in to save favorites.');
-    } else {
-      setState(() => _isFavorite = !nextValue);
-      _snack('Could not update favorite.');
-    }
+    if (result == FavoriteResult.limitReached) { setState(() => _isFavorite = false); _showPremiumDialog(); }
+    else if (result == FavoriteResult.loginRequired) { setState(() => _isFavorite = false); _snack('Log in to save.'); }
+    else if (result == FavoriteResult.failed) { setState(() => _isFavorite = !next); _snack('Could not update.'); }
   }
 
-  Future<void> _toggleHelpfulReview(
-    String reviewId,
-    String reviewOwnerId,
-  ) async {
+  Future<void> _toggleHelpfulReview(String reviewId, String reviewOwnerId) async {
     final uid = _uid;
-    if (uid == null) {
-      _snack('Log in to mark reviews helpful.');
-      return;
-    }
-    if (uid == reviewOwnerId) {
-      _snack('You cannot vote on your own review.');
-      return;
-    }
-
-    final reviewRef = FirebaseFirestore.instance
-        .collection('places')
-        .doc(_placeId)
-        .collection('reviews')
-        .doc(reviewId);
+    if (uid == null) { _snack('Log in first.'); return; }
+    if (uid == reviewOwnerId) { _snack('You cannot vote on your own review.'); return; }
+    final reviewRef = FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(reviewId);
     final voteRef = reviewRef.collection('helpfulVotes').doc(uid);
-    final userRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(reviewOwnerId);
-
+    final userRef = FirebaseFirestore.instance.collection('users').doc(reviewOwnerId);
     try {
       await FirebaseFirestore.instance.runTransaction((tx) async {
         final voteDoc = await tx.get(voteRef);
         if (voteDoc.exists) {
           tx.delete(voteRef);
           tx.update(reviewRef, {'helpfulCount': FieldValue.increment(-1)});
-          tx.set(userRef, {
-            'stats': {'helpfulVotes': FieldValue.increment(-1)},
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          tx.set(userRef, {'stats': {'helpfulVotes': FieldValue.increment(-1)}, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
         } else {
-          tx.set(voteRef, {
-            'userId': uid,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-          tx.set(reviewRef, {
-            'helpfulCount': FieldValue.increment(1),
-          }, SetOptions(merge: true));
-          tx.set(userRef, {
-            'stats': {'helpfulVotes': FieldValue.increment(1)},
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          tx.set(voteRef, {'userId': uid, 'createdAt': FieldValue.serverTimestamp()});
+          tx.set(reviewRef, {'helpfulCount': FieldValue.increment(1)}, SetOptions(merge: true));
+          tx.set(userRef, {'stats': {'helpfulVotes': FieldValue.increment(1)}, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
         }
       });
-    } catch (_) {
-      _snack('Could not update helpful vote.');
-    }
+    } catch (_) { _snack('Could not update vote.'); }
   }
-
-  // ── Reviews ───────────────────────────────────────────────────────────────
 
   Future<void> _submitReview() async {
     final uid = _uid;
-    if (uid == null) {
-      _snack('Log in to leave a review.');
-      return;
-    }
+    if (uid == null) { _snack('Log in to leave a review.'); return; }
     final text = _reviewCtrl.text.trim();
-    if (text.isEmpty) {
-      _snack('Write a review first.');
-      return;
-    }
+    if (text.isEmpty) { _snack('Write a review first.'); return; }
     setState(() => _isSubmittingReview = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
-      final ref = FirebaseFirestore.instance
-          .collection('places')
-          .doc(_placeId)
-          .collection('reviews')
-          .doc(_editingReviewId ?? uid);
+      final ref = FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(_editingReviewId ?? uid);
       await ref.set({
-        'userId': uid,
-        'userEmail': user.email ?? '',
-        'userName': user.displayName ?? '',
-        'placeId': _placeId,
-        'text': text,
-        'rating': _selectedRating,
+        'userId': uid, 'userEmail': user.email ?? '', 'userName': user.displayName ?? '',
+        'placeId': _placeId, 'text': text, 'rating': _selectedRating,
         if (_editingReviewId == null) 'helpfulCount': 0,
         'updatedAt': FieldValue.serverTimestamp(),
         if (_editingReviewId == null) 'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       await _recalcRating();
       _reviewCtrl.clear();
-      setState(() {
-        _editingReviewId = null;
-        _selectedRating = 5;
-      });
-    } catch (_) {
-      _snack('Failed to submit review.');
-    } finally {
-      if (mounted) setState(() => _isSubmittingReview = false);
-    }
+      setState(() { _editingReviewId = null; _selectedRating = 5; });
+    } catch (_) { _snack('Failed to submit review.'); }
+    finally { if (mounted) setState(() => _isSubmittingReview = false); }
   }
 
   Future<void> _confirmDeleteReview(String id) async {
@@ -200,145 +118,45 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         title: const Text('Delete review?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: AppTheme.errorColor)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Delete', style: TextStyle(color: AppTheme.errorColor))),
         ],
       ),
     );
-    if (ok == true) await _deleteReview(id);
-  }
-
-  Future<void> _deleteReview(String id) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('places')
-          .doc(_placeId)
-          .collection('reviews')
-          .doc(id)
-          .delete();
+    if (ok == true) {
+      await FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(id).delete();
       await _recalcRating();
-    } catch (_) {
-      _snack('Failed to delete review.');
     }
   }
 
   Future<void> _recalcRating() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('places')
-        .doc(_placeId)
-        .collection('reviews')
-        .get();
-    final avg = snap.docs.isEmpty
-        ? 0.0
-        : snap.docs.fold<double>(
-                0,
-                (t, d) => t + ((d.data()['rating'] as num?) ?? 0),
-              ) /
-              snap.docs.length;
-    await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
-      'averageRating': avg,
-      'reviewCount': snap.docs.length,
-    });
+    final snap = await FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').get();
+    final avg = snap.docs.isEmpty ? 0.0 : snap.docs.fold<double>(0, (t, d) => t + ((d.data()['rating'] as num?) ?? 0)) / snap.docs.length;
+    await FirebaseFirestore.instance.collection('places').doc(_placeId).update({'averageRating': avg, 'reviewCount': snap.docs.length});
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-
   Future<void> _openDirections(Place place) async {
-    final lat = place.location.latitude;
-    final lng = place.location.longitude;
-    if (lat == 0 && lng == 0) {
-      _snack('Directions unavailable.');
-      return;
-    }
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
-    );
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _snack('Could not open maps.');
-    }
+    final lat = place.location.latitude, lng = place.location.longitude;
+    if (lat == 0 && lng == 0) { _snack('Directions unavailable.'); return; }
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) _snack('Could not open maps.');
   }
 
   Future<void> _saveReminder(Place place) async {
     final uid = _uid;
-    if (uid == null) {
-      _snack('Log in to set reminders.');
-      return;
-    }
-    final lat = place.location.latitude;
-    final lng = place.location.longitude;
-    if (lat == 0 && lng == 0) {
-      _snack('No location data for reminders.');
-      return;
-    }
-    final userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .get();
+    if (uid == null) { _snack('Log in first.'); return; }
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final role = UserRole.fromData(userDoc.data());
-    final reminders = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('locationReminders')
-        .limit(role.maxReminders + 1)
-        .get();
-    final alreadySaved = reminders.docs.any((doc) => doc.id == place.id);
-    if (!alreadySaved && reminders.docs.length >= role.maxReminders) {
-      _snack(
-        'You can set up to ${role.maxReminders} reminders on ${role.subscriptionLabel}.',
-      );
-      return;
-    }
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('locationReminders')
-        .doc(place.id)
-        .set({
-          'placeId': place.id,
-          'title': place.title,
-          'location': place.location,
-          'enabled': true,
-          'radiusMeters': 300,
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+    final reminders = await FirebaseFirestore.instance.collection('users').doc(uid).collection('locationReminders').limit(role.maxReminders + 1).get();
+    final alreadySaved = reminders.docs.any((d) => d.id == place.id);
+    if (!alreadySaved && reminders.docs.length >= role.maxReminders) { _snack('Reminder limit reached.'); return; }
+    await FirebaseFirestore.instance.collection('users').doc(uid).collection('locationReminders').doc(place.id).set({
+      'placeId': place.id, 'title': place.title, 'location': place.location, 'enabled': true, 'radiusMeters': 300, 'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     if (!alreadySaved) {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'limits': {'remindersUsed': FieldValue.increment(1)},
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({'limits': {'remindersUsed': FieldValue.increment(1)}, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
     }
-    try {
-      final perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
-        _snack('Reminder saved. Enable location for alerts.');
-        return;
-      }
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
-      final dist = Geolocator.distanceBetween(
-        pos.latitude,
-        pos.longitude,
-        lat,
-        lng,
-      );
-      _snack(
-        dist <= 300
-            ? 'Reminder saved. You\'re already nearby!'
-            : 'Reminder saved!',
-      );
-    } catch (_) {
-      _snack('Reminder saved.');
-    }
+    _snack('Reminder saved!');
   }
 
   Future<void> _deletePlace(Place place) async {
@@ -348,1029 +166,569 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         title: const Text('Delete place?'),
         content: const Text('This removes the place for everyone.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: AppTheme.errorColor)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Delete', style: TextStyle(color: AppTheme.errorColor))),
         ],
       ),
     );
     if (ok != true) return;
     try {
-      await _cleanupPlaceData(place);
+      final db = FirebaseFirestore.instance;
+      final placeRef = db.collection('places').doc(_placeId);
+      final batch = db.batch();
+      final reviews = await placeRef.collection('reviews').get();
+      for (final r in reviews.docs) {
+        final votes = await r.reference.collection('helpfulVotes').get();
+        for (final v in votes.docs) batch.delete(v.reference);
+        batch.delete(r.reference);
+      }
+      batch.delete(placeRef);
+      await batch.commit();
+      for (final url in [...place.imageUrls, ...place.videoUrls]) {
+        try { await FirebaseStorage.instance.refFromURL(url).delete(); } catch (_) {}
+      }
       if (!mounted) return;
       Navigator.pop(context);
       _snack('Place deleted.');
-    } catch (_) {
-      _snack('Could not delete this place.');
-    }
-  }
-
-  Future<void> _cleanupPlaceData(Place place) async {
-    final db = FirebaseFirestore.instance;
-    final placeRef = db.collection('places').doc(_placeId);
-    final batch = db.batch();
-
-    final reviews = await placeRef.collection('reviews').get();
-    for (final review in reviews.docs) {
-      final votes = await review.reference.collection('helpfulVotes').get();
-      for (final vote in votes.docs) {
-        batch.delete(vote.reference);
-      }
-      batch.delete(review.reference);
-    }
-
-    final favorites = await db
-        .collectionGroup('favorites')
-        .where('placeId', isEqualTo: _placeId)
-        .get();
-    for (final favorite in favorites.docs) {
-      batch.delete(favorite.reference);
-      final userRef = favorite.reference.parent.parent;
-      if (userRef != null) {
-        batch.set(userRef, {
-          'limits': {'pinsUsed': FieldValue.increment(-1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    }
-
-    final reminders = await db
-        .collectionGroup('locationReminders')
-        .where('placeId', isEqualTo: _placeId)
-        .get();
-    for (final reminder in reminders.docs) {
-      batch.delete(reminder.reference);
-      final userRef = reminder.reference.parent.parent;
-      if (userRef != null) {
-        batch.set(userRef, {
-          'limits': {'remindersUsed': FieldValue.increment(-1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    }
-
-    batch.delete(placeRef);
-    await batch.commit();
-
-    for (final url in [...place.imageUrls, ...place.videoUrls]) {
-      try {
-        await FirebaseStorage.instance.refFromURL(url).delete();
-      } catch (_) {
-        // Ignore media cleanup failures so the Firestore delete still succeeds.
-      }
-    }
+    } catch (_) { _snack('Could not delete.'); }
   }
 
   void _showPremiumDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Upgrade to Premium'),
-        content: const Text(
-          'You reached your saved-place limit. Free users can save 5 places, Super Users can save 20, and Premium users can save 100.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+    showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Upgrade to Premium'),
+      content: const Text('You reached your saved-place limit.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+    ));
   }
 
   void _startEditing(String id, String text, int rating) {
-    setState(() {
-      _editingReviewId = id;
-      _selectedRating = rating;
-    });
+    setState(() { _editingReviewId = id; _selectedRating = rating; });
     _reviewCtrl.text = text;
   }
 
   void _cancelEditing() {
-    setState(() {
-      _editingReviewId = null;
-      _selectedRating = 5;
-    });
+    setState(() { _editingReviewId = null; _selectedRating = 5; });
     _reviewCtrl.clear();
   }
 
-  void _snack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
+  void _snack(String msg) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
+  String _fmtDate(dynamic v) { if (v is! Timestamp) return ''; final d = v.toDate(); return '${d.day}/${d.month}/${d.year}'; }
 
-  String _fmtDate(dynamic v) {
-    if (v is! Timestamp) return '';
-    final d = v.toDate();
-    return '${d.day}/${d.month}/${d.year}';
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── BUILD ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('places')
-          .doc(_placeId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final place = snapshot.hasData && snapshot.data!.exists
-            ? Place.fromFirestore(snapshot.data!)
-            : widget.place;
-
-        return Scaffold(
-          backgroundColor: AppTheme.background,
-          body: CustomScrollView(
-            slivers: [
-              _buildAppBar(place),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 120),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(place),
-                      const SizedBox(height: 20),
-                      _buildActions(context, place),
-                      const SizedBox(height: 26),
-                      _Section(
-                        title: 'About',
-                        child: Text(
-                          place.description,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: AppTheme.textMid,
-                            height: 1.7,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _buildLocalDetails(place),
-                      if (place.videoUrls.isNotEmpty) ...[
-                        const SizedBox(height: 24),
-                        _Section(
-                          title: 'Videos',
-                          child: _VideoGallery(videoUrls: place.videoUrls),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      _buildReviews(),
-                    ],
-                  ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.overlayDark,
+      child: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('places').doc(_placeId).snapshots(),
+        builder: (_, snapshot) {
+          final place = snapshot.hasData && snapshot.data!.exists ? Place.fromFirestore(snapshot.data!) : widget.place;
+          return Scaffold(
+            backgroundColor: AppTheme.background,
+            body: CustomScrollView(
+              slivers: [
+                _buildAppBar(place),
+                SliverToBoxAdapter(
+                  child: Column(children: [
+                    _buildTabBar(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        _buildStatChips(place),
+                        const SizedBox(height: 22),
+                        _buildDescription(place),
+                        const SizedBox(height: 20),
+                        _buildLocalTip(place),
+                        _buildDishes(place),
+                        if (place.videoUrls.isNotEmpty) ...[const SizedBox(height: 20), _buildVideos(place)],
+                        const SizedBox(height: 20),
+                        _buildOwnerCard(place),
+                        const SizedBox(height: 20),
+                        _buildReviews(),
+                        const SizedBox(height: 100),
+                      ]),
+                    ),
+                  ]),
                 ),
-              ),
-            ],
-          ),
-          bottomNavigationBar: _buildBottomCTA(place),
-        );
-      },
+              ],
+            ),
+            bottomNavigationBar: _buildBottomCTA(place),
+          );
+        },
+      ),
     );
   }
 
-  // ── App bar ───────────────────────────────────────────────────────────────
+  // ── App bar with full hero ─────────────────────────────────────────────────
 
   Widget _buildAppBar(Place place) {
-    final images = place.imageUrls.isNotEmpty
-        ? place.imageUrls
-        : ['https://placehold.co/800x400/F5F3F0/A5A5BB?text=LikeALocal'];
-
+    final images = place.imageUrls.isNotEmpty ? place.imageUrls : [''];
     return SliverAppBar(
       expandedHeight: 310,
       pinned: true,
       elevation: 0,
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.primaryDark,
+      systemOverlayStyle: AppTheme.overlayDark,
       leading: Padding(
         padding: const EdgeInsets.all(8),
-        child: _CircleBtn(
-          icon: Icons.arrow_back_ios_new_rounded,
+        child: GestureDetector(
           onTap: () => Navigator.pop(context),
+          child: Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+            child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+          ),
         ),
       ),
       actions: [
         Padding(
           padding: const EdgeInsets.all(8),
-          child: _isFavoriteLoading
-              ? Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppTheme.primary,
-                      ),
-                    ),
-                  ),
-                )
-              : _CircleBtn(
-                  icon: _isFavorite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  iconColor: _isFavorite
-                      ? AppTheme.dustyPink
-                      : AppTheme.textMid,
-                  onTap: () => _toggleFavorite(place),
-                ),
+          child: GestureDetector(
+            onTap: () => _openDirections(widget.place),
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+              child: const Icon(Icons.compass_calibration_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 8, 12, 8),
+          child: GestureDetector(
+            onTap: () => _toggleFavorite(widget.place),
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+              child: _isFavoriteLoading
+                  ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Icon(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      color: _isFavorite ? AppTheme.peach : Colors.white, size: 20),
+            ),
+          ),
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            PageView.builder(
-              itemCount: images.length,
-              itemBuilder: (context, i) => CachedNetworkImage(
-                imageUrl: images[i],
-                fit: BoxFit.cover,
-                placeholder: (context, url) =>
-                    Container(color: AppTheme.surfaceWarm),
-                errorWidget: (context, url, error) => Container(
-                  color: AppTheme.surfaceWarm,
-                  child: Center(
-                    child: Icon(
-                      Icons.image_outlined,
-                      color: AppTheme.textLight,
-                      size: 40,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Soft gradient at bottom
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black38],
-                  stops: [0.5, 1.0],
-                ),
-              ),
-            ),
-            if (images.length > 1)
-              Positioned(
-                bottom: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${images.length} photos',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: AppTheme.textDark,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            if (place.ownerIsSuperUser)
-              Positioned(
-                bottom: 16,
-                left: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.amber,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        color: Colors.white,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Super User Pick',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Header ────────────────────────────────────────────────────────────────
-
-  Widget _buildHeader(Place place) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                place.category,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.primary,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppTheme.mintLight,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Open now',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.mint,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Text(
-          place.title,
-          style: GoogleFonts.poppins(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textDark,
-            height: 1.2,
+        background: Stack(fit: StackFit.expand, children: [
+          PageView.builder(
+            itemCount: images.length,
+            itemBuilder: (_, i) => images[i].isEmpty
+                ? Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))
+                : CachedNetworkImage(imageUrl: images[i], fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
+                    errorWidget: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))),
           ),
-        ),
-        if (place.address.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Icon(
-                Icons.location_on_rounded,
-                size: 15,
-                color: AppTheme.dustyPink,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  place.address,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: AppTheme.textLight,
-                  ),
-                ),
-              ),
+          // Gradient overlay
+          const DecoratedBox(decoration: BoxDecoration(gradient: AppTheme.heroGradient)),
+          // Title + location at bottom
+          Positioned(left: 18, right: 18, bottom: 60, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.place.title, style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white, height: 1.15)),
+            if (widget.place.address.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Icon(Icons.location_on_rounded, size: 14, color: Colors.white70),
+                const SizedBox(width: 4),
+                Expanded(child: Text(widget.place.address, style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ]),
             ],
-          ),
-        ],
-        const SizedBox(height: 14),
-        // Rating
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.softShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ...List.generate(5, (i) {
-                return Icon(
-                  i < place.averageRating.round()
-                      ? Icons.star_rounded
-                      : Icons.star_outline_rounded,
-                  color: AppTheme.amber,
-                  size: 20,
-                );
-              }),
-              const SizedBox(width: 10),
-              Text(
-                place.averageRating.toStringAsFixed(1),
-                style: GoogleFonts.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textDark,
+            const SizedBox(height: 8),
+            // Rating row
+            Row(children: [
+              ...List.generate(5, (i) => Icon(
+                i < widget.place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: AppTheme.amber, size: 17,
+              )),
+              const SizedBox(width: 6),
+              Text('${widget.place.averageRating.toStringAsFixed(1)}/5', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+            ]),
+          ])),
+          // Thumbnail strip bottom-right (like reference)
+          if (widget.place.imageUrls.length > 1)
+            Positioned(right: 14, bottom: 56, child: Row(children: [
+              ...widget.place.imageUrls.take(3).map((url) => Container(
+                width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '(${place.reviewCount} reviews)',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: AppTheme.textLight,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Quick actions ─────────────────────────────────────────────────────────
-
-  Widget _buildActions(BuildContext context, Place place) {
-    final uid = _uid;
-    return FutureBuilder<UserRole>(
-      future: uid == null
-          ? Future.value(UserRole.regularFree())
-          : fetchUserRole(uid),
-      builder: (context, snapshot) {
-        final role = snapshot.data ?? UserRole.regularFree();
-        final canManage =
-            uid != null && role.canManagePlace(place.ownerId, uid);
-        final canMessageOwner =
-            uid != null && place.ownerId.isNotEmpty && place.ownerId != uid;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _ActionBtn(
-              icon: Icons.chat_bubble_outline_rounded,
-              label: 'Message owner',
-              color: AppTheme.softBlue,
-              bg: const Color(0xFFE8F1F9),
-              onTap: canMessageOwner
-                  ? () => ChatService.startChat(
-                      context,
-                      place.ownerId,
-                      otherUserName: place.ownerName,
-                    )
-                  : null,
-            ),
-            _ActionBtn(
-              icon: Icons.notifications_active_outlined,
-              label: 'Remind me',
-              color: AppTheme.peach,
-              bg: AppTheme.peachLight,
-              onTap: () => _saveReminder(place),
-            ),
-            if (canManage) ...[
-              _ActionBtn(
-                icon: Icons.edit_outlined,
-                label: role.isAdmin ? 'Admin edit' : 'Edit',
-                color: AppTheme.primary,
-                bg: AppTheme.primaryLight,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AddPlaceScreen(placeToEdit: place),
-                  ),
-                ),
-              ),
-              _ActionBtn(
-                icon: Icons.delete_outline_rounded,
-                label: role.isAdmin ? 'Admin delete' : 'Delete',
-                color: AppTheme.errorColor,
-                bg: const Color(0xFFFDECEC),
-                onTap: () => _deletePlace(place),
-              ),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  // ── Local details ─────────────────────────────────────────────────────────
-
-  Widget _buildLocalDetails(Place place) {
-    final rows =
-        <
-          ({
-            IconData icon,
-            Color iconColor,
-            Color iconBg,
-            String label,
-            String value,
-          })
-        >[
-          if (place.budget.isNotEmpty)
-            (
-              icon: Icons.payments_outlined,
-              iconColor: AppTheme.mint,
-              iconBg: AppTheme.mintLight,
-              label: 'Budget',
-              value: place.budget,
-            ),
-          if (place.atmosphere.isNotEmpty)
-            (
-              icon: Icons.groups_outlined,
-              iconColor: AppTheme.softBlue,
-              iconBg: const Color(0xFFE8F1F9),
-              label: 'Vibe',
-              value: place.atmosphere,
-            ),
-          if (place.localTip.isNotEmpty)
-            (
-              icon: Icons.lightbulb_outline,
-              iconColor: AppTheme.amber,
-              iconBg: const Color(0xFFFDF6E3),
-              label: 'Local tip',
-              value: place.localTip,
-            ),
-          if (place.recommendedDish.isNotEmpty)
-            (
-              icon: Icons.restaurant_menu_outlined,
-              iconColor: AppTheme.peach,
-              iconBg: AppTheme.peachLight,
-              label: 'Must try',
-              value: place.recommendedDish,
-            ),
-          if (place.ownerName.isNotEmpty)
-            (
-              icon: Icons.person_outline_rounded,
-              iconColor: AppTheme.primary,
-              iconBg: AppTheme.primaryLight,
-              label: 'Contributor',
-              value: place.ownerName,
-            ),
-        ];
-
-    if (rows.isEmpty) return const SizedBox.shrink();
-
-    return _Section(
-      title: 'Local details',
-      child: Column(
-        children: rows.map((r) {
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.border),
-              boxShadow: AppTheme.softShadow,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              )),
+              if (widget.place.imageUrls.length > 3)
                 Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: r.iconBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(r.icon, size: 20, color: r.iconColor),
+                  width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.black54, border: Border.all(color: Colors.white, width: 1.5)),
+                  child: Center(child: Text('+${widget.place.imageUrls.length - 3}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold))),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        r.label,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppTheme.textLight,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        r.value,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: AppTheme.textDark,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+            ])),
+        ]),
       ),
     );
   }
 
-  // ── Reviews ───────────────────────────────────────────────────────────────
+  // ── Tab bar (Overview / Details / Reviews / Explore Nearby) ───────────────
+
+  Widget _buildTabBar() {
+    return Container(
+      color: AppTheme.surface,
+      child: TabBar(
+        controller: _tabCtrl,
+        indicatorColor: AppTheme.primary,
+        indicatorWeight: 2.5,
+        labelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w400),
+        labelColor: AppTheme.primary,
+        unselectedLabelColor: AppTheme.textLight,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        tabs: const [
+          Tab(text: 'Overview'),
+          Tab(text: 'Details'),
+          Tab(text: 'Reviews'),
+          Tab(text: 'Explore Nearby'),
+        ],
+        onTap: (i) {
+          // Scroll to section if desired — for now tabs just visually select
+        },
+      ),
+    );
+  }
+
+  // ── Stat chips row (Distance / Travel Time / Weather style) ───────────────
+
+  Widget _buildStatChips(Place place) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
+      child: Row(children: [
+        _StatChip(icon: Icons.location_on_outlined, iconColor: AppTheme.peach, label: 'Category', value: place.category),
+        _StatDivider(),
+        _StatChip(icon: Icons.star_rounded, iconColor: AppTheme.amber, label: 'Rating', value: '${place.averageRating.toStringAsFixed(1)}/5'),
+        _StatDivider(),
+        _StatChip(icon: Icons.wb_sunny_outlined, iconColor: AppTheme.primary, label: 'Budget', value: place.budget.isNotEmpty ? place.budget : 'Free'),
+      ]),
+    );
+  }
+
+  // ── Description ────────────────────────────────────────────────────────────
+
+  Widget _buildDescription(Place place) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Description', style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+      const SizedBox(height: 10),
+      Text(place.description, style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textMid, height: 1.7)),
+    ]);
+  }
+
+  // ── Local tip ──────────────────────────────────────────────────────────────
+
+  Widget _buildLocalTip(Place place) {
+    if (place.localTip.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryDim)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 3, height: 40, decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Local tip', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+            const SizedBox(height: 4),
+            Text('"${place.localTip}"', style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textMid, fontStyle: FontStyle.italic, height: 1.5)),
+          ])),
+        ]),
+      ),
+    );
+  }
+
+  // ── Recommended dishes ─────────────────────────────────────────────────────
+
+  Widget _buildDishes(Place place) {
+    if (place.recommendedDish.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Recommended', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: place.recommendedDish.split(',').map((d) =>
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
+            child: Text(d.trim(), style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+          )
+        ).toList()),
+      ]),
+    );
+  }
+
+  // ── Videos ─────────────────────────────────────────────────────────────────
+
+  Widget _buildVideos(Place place) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Videos', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+      const SizedBox(height: 10),
+      ...place.videoUrls.map((url) => Padding(padding: const EdgeInsets.only(bottom: 12), child: _VideoPlayerCard(url: url))),
+    ]);
+  }
+
+  // ── Owner card ─────────────────────────────────────────────────────────────
+
+  Widget _buildOwnerCard(Place place) {
+    if (place.ownerName.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(gradient: AppTheme.primaryGradient, shape: BoxShape.circle),
+          child: Center(child: Text(place.ownerName.isNotEmpty ? place.ownerName[0].toUpperCase() : '?',
+              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(place.ownerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+            if (place.ownerIsSuperUser) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.workspace_premium_rounded, size: 11, color: AppTheme.primary),
+                  const SizedBox(width: 3),
+                  Text('Super User', style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ],
+          ]),
+          Text('Place contributor', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textLight)),
+        ])),
+        if (place.ownerId.isNotEmpty && place.ownerId != _uid)
+          GestureDetector(
+            onTap: () => ChatService.startChat(context, place.ownerId, otherUserName: place.ownerName),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
+              child: Text('Message', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  // ── Reviews ────────────────────────────────────────────────────────────────
 
   Widget _buildReviews() {
     final canReview = _uid != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Reviews',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textDark,
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        // Write review card
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppTheme.border),
-            boxShadow: AppTheme.softShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                canReview
-                    ? _editingReviewId != null
-                          ? 'Edit your review'
-                          : 'Leave a review'
-                    : 'Log in to leave a review',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: List.generate(5, (i) {
-                  final star = i + 1;
-                  return GestureDetector(
-                    onTap: canReview
-                        ? () => setState(() => _selectedRating = star)
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Icon(
-                        star <= _selectedRating
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        color: AppTheme.amber,
-                        size: 32,
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _reviewCtrl,
-                enabled: canReview,
-                maxLines: 3,
-                maxLength: 300,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: AppTheme.textDark,
-                ),
-                decoration: InputDecoration(
-                  hintText: canReview
-                      ? 'Share your experience…'
-                      : 'Log in to share your experience.',
-                  counterStyle: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: AppTheme.textLight,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (_editingReviewId != null) ...[
-                    TextButton(
-                      onPressed: _cancelEditing,
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  SizedBox(
-                    height: 40,
-                    child: ElevatedButton(
-                      onPressed: !canReview || _isSubmittingReview
-                          ? null
-                          : _submitReview,
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(80, 40),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                      ),
-                      child: _isSubmittingReview
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text(
-                              _editingReviewId != null ? 'Update' : 'Submit',
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('places')
-              .doc(_placeId)
-              .collection('reviews')
-              .orderBy('createdAt', descending: true)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppTheme.primary),
-              );
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'No reviews yet. Be the first! 🌟',
-                    style: GoogleFonts.poppins(
-                      color: AppTheme.textLight,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            return Column(
-              children: snapshot.data!.docs.map((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                final reviewOwnerId = (data['userId'] as String?) ?? '';
-                final isOwner = reviewOwnerId == _uid;
-                final rating = (data['rating'] as num?)?.toInt() ?? 0;
-                final helpfulCount =
-                    (data['helpfulCount'] as num?)?.toInt() ?? 0;
-                final name = ((data['userName'] as String?) ?? '').trim();
-                final email = ((data['userEmail'] as String?) ?? '').trim();
-                final label = name.isNotEmpty
-                    ? name
-                    : email.isNotEmpty
-                    ? email
-                    : 'Anonymous';
-                final date = _fmtDate(data['updatedAt'] ?? data['createdAt']);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppTheme.border),
-                    boxShadow: AppTheme.softShadow,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                label.isNotEmpty ? label[0].toUpperCase() : '?',
-                                style: GoogleFonts.poppins(
-                                  color: AppTheme.primary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  label,
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                    color: AppTheme.textDark,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Row(
-                                  children: [
-                                    ...List.generate(
-                                      5,
-                                      (i) => Icon(
-                                        i < rating
-                                            ? Icons.star_rounded
-                                            : Icons.star_outline_rounded,
-                                        color: AppTheme.amber,
-                                        size: 13,
-                                      ),
-                                    ),
-                                    if (date.isNotEmpty) ...[
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        date,
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 11,
-                                          color: AppTheme.textLight,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isOwner)
-                            PopupMenuButton<String>(
-                              onSelected: (v) {
-                                if (v == 'edit') {
-                                  _startEditing(
-                                    doc.id,
-                                    data['text'] ?? '',
-                                    rating,
-                                  );
-                                } else {
-                                  _confirmDeleteReview(doc.id);
-                                }
-                              },
-                              itemBuilder: (ctx) => [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text(
-                                    'Edit',
-                                    style: GoogleFonts.poppins(
-                                      color: AppTheme.textDark,
-                                    ),
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text(
-                                    'Delete',
-                                    style: GoogleFonts.poppins(
-                                      color: AppTheme.errorColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              child: Icon(
-                                Icons.more_vert_rounded,
-                                size: 18,
-                                color: AppTheme.textLight,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        data['text'] ?? '',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: AppTheme.textMid,
-                          height: 1.6,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _HelpfulButton(
-                        placeId: _placeId,
-                        reviewId: doc.id,
-                        reviewOwnerId: reviewOwnerId,
-                        currentUserId: _uid,
-                        count: helpfulCount,
-                        onTap: () =>
-                            _toggleHelpfulReview(doc.id, reviewOwnerId),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Reviews', style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+      const SizedBox(height: 14),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(canReview ? (_editingReviewId != null ? 'Edit your review' : 'Leave a review') : 'Log in to leave a review',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: AppTheme.textDark)),
+          const SizedBox(height: 12),
+          Row(children: List.generate(5, (i) {
+            final star = i + 1;
+            return GestureDetector(
+              onTap: canReview ? () => setState(() => _selectedRating = star) : null,
+              child: Padding(padding: const EdgeInsets.only(right: 4), child: Icon(
+                star <= _selectedRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: AppTheme.amber, size: 30,
+              )),
             );
-          },
-        ),
-      ],
-    );
+          })),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reviewCtrl, enabled: canReview, maxLines: 3, maxLength: 300,
+            style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textDark),
+            decoration: InputDecoration(hintText: canReview ? 'Share your experience…' : 'Log in to share.',
+                counterStyle: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight)),
+          ),
+          const SizedBox(height: 8),
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            if (_editingReviewId != null) ...[TextButton(onPressed: _cancelEditing, child: const Text('Cancel')), const SizedBox(width: 8)],
+            SizedBox(height: 40, child: ElevatedButton(
+              onPressed: !canReview || _isSubmittingReview ? null : _submitReview,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40), padding: const EdgeInsets.symmetric(horizontal: 20)),
+              child: _isSubmittingReview
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(_editingReviewId != null ? 'Update' : 'Submit'),
+            )),
+          ]),
+        ]),
+      ),
+      const SizedBox(height: 16),
+      StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').orderBy('createdAt', descending: true).snapshots(),
+        builder: (_, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary)));
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return Center(child: Padding(padding: const EdgeInsets.all(20),
+                child: Text('No reviews yet. Be the first! 🌟', style: GoogleFonts.poppins(color: AppTheme.textLight, fontSize: 13))));
+          }
+          return Column(children: snapshot.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final reviewOwnerId = (data['userId'] as String?) ?? '';
+            final isOwner = reviewOwnerId == _uid;
+            final rating = (data['rating'] as num?)?.toInt() ?? 0;
+            final helpfulCount = (data['helpfulCount'] as num?)?.toInt() ?? 0;
+            final name = ((data['userName'] as String?) ?? '').trim();
+            final email = ((data['userEmail'] as String?) ?? '').trim();
+            final label = name.isNotEmpty ? name : email.isNotEmpty ? email : 'Anonymous';
+            final date = _fmtDate(data['updatedAt'] ?? data['createdAt']);
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Container(
+                    width: 38, height: 38,
+                    decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
+                    child: Center(child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
+                        style: GoogleFonts.poppins(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.bold))),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                    Row(children: [
+                      ...List.generate(5, (i) => Icon(i < rating ? Icons.star_rounded : Icons.star_outline_rounded, color: AppTheme.amber, size: 13)),
+                      if (date.isNotEmpty) ...[const SizedBox(width: 8), Text(date, style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight))],
+                    ]),
+                  ])),
+                  if (isOwner) PopupMenuButton<String>(
+                    onSelected: (v) => v == 'edit' ? _startEditing(doc.id, data['text'] ?? '', rating) : _confirmDeleteReview(doc.id),
+                    itemBuilder: (ctx) => [
+                      PopupMenuItem(value: 'edit', child: Text('Edit', style: GoogleFonts.poppins(color: AppTheme.textDark))),
+                      PopupMenuItem(value: 'delete', child: Text('Delete', style: GoogleFonts.poppins(color: AppTheme.errorColor))),
+                    ],
+                    child: Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.textLight),
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Text(data['text'] ?? '', style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textMid, height: 1.6)),
+                const SizedBox(height: 10),
+                _HelpfulButton(placeId: _placeId, reviewId: doc.id, reviewOwnerId: reviewOwnerId, currentUserId: _uid, count: helpfulCount, onTap: () => _toggleHelpfulReview(doc.id, reviewOwnerId)),
+              ]),
+            );
+          }).toList());
+        },
+      ),
+    ]);
   }
 
-  // ── Bottom CTA ────────────────────────────────────────────────────────────
+  // ── Bottom CTA (matches the reference: price left, teal "Booking Now" right) ──
 
   Widget _buildBottomCTA(Place place) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        22,
-        12,
-        22,
-        MediaQuery.of(context).padding.bottom + 12,
-      ),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        border: Border(top: BorderSide(color: AppTheme.border)),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+    final uid = _uid;
+    return FutureBuilder<UserRole>(
+      future: uid == null ? Future.value(UserRole.regularFree()) : fetchUserRole(uid),
+      builder: (_, snap) {
+        final role = snap.data ?? UserRole.regularFree();
+        final canManage = uid != null && role.canManagePlace(place.ownerId, uid);
+        return Container(
+          padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(context).padding.bottom + 14),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4))],
           ),
-        ],
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton.icon(
-          onPressed: () => _openDirections(place),
-          icon: const Icon(Icons.directions_rounded, size: 20),
-          label: const Text('Get directions'),
-        ),
-      ),
+          child: Row(children: [
+            // Left: place info / manage buttons
+            if (canManage) ...[
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AddPlaceScreen(placeToEdit: place))),
+                child: Container(width: 48, height: 48,
+                  decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryDim)),
+                  child: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 22)),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: () => _deletePlace(place),
+                child: Container(width: 48, height: 48,
+                  decoration: BoxDecoration(color: AppTheme.errorColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.errorColor.withValues(alpha: 0.3))),
+                  child: Icon(Icons.delete_outline_rounded, color: AppTheme.errorColor, size: 22)),
+              ),
+              const SizedBox(width: 10),
+            ] else ...[
+              // Reminder + chat icon buttons
+              GestureDetector(
+                onTap: () => _saveReminder(place),
+                child: Container(width: 48, height: 48,
+                  decoration: BoxDecoration(color: AppTheme.surfaceWarm, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.border)),
+                  child: const Icon(Icons.alarm_rounded, color: AppTheme.primary, size: 22)),
+              ),
+              const SizedBox(width: 10),
+            ],
+            // Directions / main CTA — teal pill matching reference
+            Expanded(child: SizedBox(height: 52, child: ElevatedButton.icon(
+              onPressed: () => _openDirections(place),
+              icon: const Icon(Icons.directions_rounded, size: 20),
+              label: const Text('Get Directions'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            ))),
+          ]),
+        );
+      },
     );
   }
 }
 
-// ── Sub-widgets ──────────────────────────────────────────────────────────────
+// ── Sub-widgets ────────────────────────────────────────────────────────────────
 
-class _HelpfulButton extends StatelessWidget {
-  final String placeId;
-  final String reviewId;
-  final String reviewOwnerId;
-  final String? currentUserId;
-  final int count;
-  final VoidCallback onTap;
-
-  const _HelpfulButton({
-    required this.placeId,
-    required this.reviewId,
-    required this.reviewOwnerId,
-    required this.currentUserId,
-    required this.count,
-    required this.onTap,
-  });
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label, value;
+  const _StatChip({required this.icon, required this.iconColor, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    if (currentUserId == null || currentUserId == reviewOwnerId) {
-      return _HelpfulPill(isActive: false, count: count, onTap: null);
-    }
+    return Expanded(child: Column(children: [
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon, size: 16, color: iconColor),
+        const SizedBox(width: 4),
+        Flexible(child: Text(value, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark), overflow: TextOverflow.ellipsis)),
+      ]),
+      const SizedBox(height: 2),
+      Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textLight)),
+    ]));
+  }
+}
 
+class _StatDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 0.5, height: 32, color: AppTheme.border, margin: const EdgeInsets.symmetric(horizontal: 8));
+  }
+}
+
+class _HelpfulButton extends StatelessWidget {
+  final String placeId, reviewId, reviewOwnerId;
+  final String? currentUserId;
+  final int count;
+  final VoidCallback onTap;
+  const _HelpfulButton({required this.placeId, required this.reviewId, required this.reviewOwnerId, required this.currentUserId, required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUserId == null || currentUserId == reviewOwnerId) return _HelpfulPill(isActive: false, count: count, onTap: null);
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('places')
-          .doc(placeId)
-          .collection('reviews')
-          .doc(reviewId)
-          .collection('helpfulVotes')
-          .doc(currentUserId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        return _HelpfulPill(
-          isActive: snapshot.data?.exists ?? false,
-          count: count,
-          onTap: onTap,
-        );
-      },
+      stream: FirebaseFirestore.instance.collection('places').doc(placeId).collection('reviews').doc(reviewId).collection('helpfulVotes').doc(currentUserId).snapshots(),
+      builder: (_, snap) => _HelpfulPill(isActive: snap.data?.exists ?? false, count: count, onTap: onTap),
     );
   }
 }
@@ -1379,12 +737,7 @@ class _HelpfulPill extends StatelessWidget {
   final bool isActive;
   final int count;
   final VoidCallback? onTap;
-
-  const _HelpfulPill({
-    required this.isActive,
-    required this.count,
-    required this.onTap,
-  });
+  const _HelpfulPill({required this.isActive, required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1398,62 +751,22 @@ class _HelpfulPill extends StatelessWidget {
           decoration: BoxDecoration(
             color: isActive ? AppTheme.primaryLight : AppTheme.surfaceWarm,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: isActive ? AppTheme.primaryDim : AppTheme.border,
-            ),
+            border: Border.all(color: isActive ? AppTheme.primaryDim : AppTheme.border),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isActive
-                    ? Icons.thumb_up_alt_rounded
-                    : Icons.thumb_up_alt_outlined,
-                size: 14,
-                color: isActive ? AppTheme.primary : AppTheme.textLight,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                '$count helpful',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: isActive ? AppTheme.primary : AppTheme.textMid,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(isActive ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined, size: 14, color: isActive ? AppTheme.primary : AppTheme.textLight),
+            const SizedBox(width: 5),
+            Text('$count helpful', style: GoogleFonts.poppins(fontSize: 11, color: isActive ? AppTheme.primary : AppTheme.textMid, fontWeight: FontWeight.w500)),
+          ]),
         ),
       ),
     );
   }
 }
 
-class _VideoGallery extends StatelessWidget {
-  final List<String> videoUrls;
-
-  const _VideoGallery({required this.videoUrls});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: videoUrls
-          .map(
-            (url) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _VideoPlayerCard(url: url),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
 class _VideoPlayerCard extends StatefulWidget {
   final String url;
-
   const _VideoPlayerCard({required this.url});
-
   @override
   State<_VideoPlayerCard> createState() => _VideoPlayerCardState();
 }
@@ -1466,16 +779,11 @@ class _VideoPlayerCardState extends State<_VideoPlayerCard> {
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) setState(() => _ready = true);
-      });
+      ..initialize().then((_) { if (mounted) setState(() => _ready = true); });
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  void dispose() { _controller.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -1483,151 +791,18 @@ class _VideoPlayerCardState extends State<_VideoPlayerCard> {
       borderRadius: BorderRadius.circular(16),
       child: AspectRatio(
         aspectRatio: _ready ? _controller.value.aspectRatio : 16 / 9,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(color: AppTheme.surfaceWarm),
-            if (_ready)
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _controller.value.isPlaying
-                        ? _controller.pause()
-                        : _controller.play();
-                  });
-                },
-                child: VideoPlayer(_controller),
-              )
-            else
-              const CircularProgressIndicator(color: AppTheme.primary),
-            if (_ready && !_controller.value.isPlaying)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.all(14),
-                  child: Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 34,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _Section({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textDark,
-          ),
-        ),
-        const SizedBox(height: 12),
-        child,
-      ],
-    );
-  }
-}
-
-class _CircleBtn extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final VoidCallback onTap;
-
-  const _CircleBtn({
-    required this.icon,
-    this.iconColor = AppTheme.textDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.92),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+        child: Stack(alignment: Alignment.center, children: [
+          Container(color: AppTheme.surfaceWarm),
+          if (_ready) GestureDetector(
+            onTap: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()),
+            child: VideoPlayer(_controller),
+          ) else const CircularProgressIndicator(color: AppTheme.primary),
+          if (_ready && !_controller.value.isPlaying)
+            DecoratedBox(
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.25), shape: BoxShape.circle),
+              child: const Padding(padding: EdgeInsets.all(14), child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 34)),
             ),
-          ],
-        ),
-        child: Icon(icon, size: 18, color: iconColor),
-      ),
-    );
-  }
-}
-
-class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final Color bg;
-  final VoidCallback? onTap;
-
-  const _ActionBtn({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.bg,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final disabled = onTap == null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Opacity(
-        opacity: disabled ? 0.4 : 1.0,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: color,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
+        ]),
       ),
     );
   }
