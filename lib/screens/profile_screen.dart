@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../models/user_role.dart';
 import '../providers/search_provider.dart';
+import 'chat_list_screen.dart';
 
 /// lib/screens/profile_screen.dart
 class ProfileScreen extends StatefulWidget {
@@ -495,6 +496,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         filled: true,
                         fillColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Messages shortcut
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ChatListScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.chat_bubble_outline_rounded,
+                                color: Colors.blueAccent, size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                'My Messages',
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: Colors.grey, size: 20),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),

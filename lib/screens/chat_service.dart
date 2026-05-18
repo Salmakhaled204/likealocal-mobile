@@ -74,7 +74,7 @@ class ChatService {
       final chatRef = firestore.collection('chats').doc(chatId);
       final chatDoc = await chatRef.get();
 
-      // Resolve the other user's display name if not provided
+      // Resolve the other user's display name and check chat privacy
       String resolvedName = otherUserName ?? 'User';
       if (otherUserName == null) {
         resolvedName = otherUserData['displayName'] ?? 'User';
@@ -95,8 +95,8 @@ class ChatService {
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
-
-      if (!context.mounted) return;
+    
+       if (!context.mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(

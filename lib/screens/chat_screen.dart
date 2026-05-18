@@ -48,6 +48,23 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    // Re-check recipient's chat privacy setting before each send
+    final recipientDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.otherUserId)
+        .get();
+    final chatEnabled = recipientDoc.data()?['chatEnabled'] ?? true;
+    if (!chatEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('This user has turned off messages.')),
+        );
+      }
+      return;
+    }
+
     _controller.clear();
 
     final user = FirebaseAuth.instance.currentUser!;
