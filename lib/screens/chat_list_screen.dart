@@ -8,7 +8,7 @@ import 'chat_screen.dart';
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
 
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   String _formatTime(Timestamp? ts) {
     if (ts == null) return '';
@@ -22,6 +22,26 @@ class ChatListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
+    if (uid == null) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.black),
+          title: Text(
+            'Messages',
+            style: GoogleFonts.inter(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        body: const Center(child: Text('Please sign in to view messages.')),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -39,7 +59,7 @@ class ChatListScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('chats')
-            .where('participants', arrayContains: _uid)
+            .where('participants', arrayContains: uid)
             .orderBy('lastMessageTime', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
@@ -102,13 +122,13 @@ class ChatListScreen extends StatelessWidget {
                 data['participants'] ?? [],
               );
               final otherId = participants.firstWhere(
-                (id) => id != _uid,
+                (id) => id != uid,
                 orElse: () => '',
               );
               final otherName = _getOtherName(data, otherId);
               final lastMessage = data['lastMessage'] as String? ?? '';
               final lastTime = data['lastMessageTime'] as Timestamp?;
-              final unreadCount = (data['unreadCount_$_uid'] ?? 0) as int;
+              final unreadCount = (data['unreadCount_$uid'] ?? 0) as int;
 
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(

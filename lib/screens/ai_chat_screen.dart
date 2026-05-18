@@ -287,7 +287,6 @@ class _AiChatScreenState extends State<AiChatScreen> {
       return false;
     }
     await userRef.set({
-      'limits': {'aiRequestsToday': FieldValue.increment(1)},
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     return true;
