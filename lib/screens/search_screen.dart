@@ -90,7 +90,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
                 const SizedBox(width: 12),
                 Consumer<SearchProvider>(
-                  builder: (_, sp, __) {
+                  builder: (_, sp, _) {
                     final has = sp.selectedCategories.isNotEmpty || sp.userPreferences.isNotEmpty;
                     return GestureDetector(
                       onTap: _showFilters,
@@ -117,7 +117,7 @@ class _SearchScreenState extends State<SearchScreen> {
           // ── Results or idle ────────────────────────────────────────────
           Expanded(
             child: Consumer<SearchProvider>(
-              builder: (_, sp, __) {
+              builder: (_, sp, _) {
                 if (sp.isLoading) return const Padding(padding: EdgeInsets.all(20), child: ShimmerLoadingList());
                 if (sp.errorMessage != null) return _Prompt(icon: Icons.error_outline_rounded, iconColor: AppTheme.errorColor, title: 'Something went wrong', subtitle: sp.errorMessage!);
 

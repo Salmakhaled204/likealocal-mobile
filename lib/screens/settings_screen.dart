@@ -124,7 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: 'Receive general app updates',
             trailing: Switch(
               value: _pushNotifications,
-              activeColor: AppTheme.primary,
+              activeThumbColor: AppTheme.primary,
               onChanged: (val) {
                 setState(() => _pushNotifications = val);
                 _savePref('setting_push_notifications', val);
@@ -137,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: 'Alert when near a saved place',
             trailing: Switch(
               value: _proximityNotifications,
-              activeColor: AppTheme.primary,
+              activeThumbColor: AppTheme.primary,
               onChanged: (val) {
                 setState(() => _proximityNotifications = val);
                 _savePref('setting_proximity_notifications', val);

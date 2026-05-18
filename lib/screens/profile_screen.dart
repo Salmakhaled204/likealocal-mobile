@@ -280,7 +280,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
                     _RoleSummary(role: _userRole),
                     const SizedBox(height: 12),
-                    _RoleActions(role: _userRole),
+                    _RoleActions(
+  role: _userRole,
+  onBecomeContributor: () {},
+),
                     const SizedBox(height: 28),
 
                     // Display Name

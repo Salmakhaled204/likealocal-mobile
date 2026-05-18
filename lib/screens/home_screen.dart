@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
+import '../providers/home_provider.dart';
 import '../models/place.dart';
 import '../models/user_role.dart';
 import '../services/favorite_service.dart';
@@ -392,7 +392,7 @@ class _HomeTabState extends State<_HomeTab> {
               ),
 
               // ── Offline banner ─────────────────────────────────────────
-              Consumer<HomeProvider>(builder: (_, hp, __) {
+              Consumer<HomeProvider>(builder: (_, hp, _) {
                 if (!hp.isOffline) return const SliverToBoxAdapter(child: SizedBox.shrink());
                 return SliverToBoxAdapter(
                   child: Container(
@@ -467,7 +467,7 @@ class _HomeTabState extends State<_HomeTab> {
               ),
 
               // ── 2-column grid (matches reference exactly) ──────────────
-              Consumer<HomeProvider>(builder: (_, hp, __) {
+              Consumer<HomeProvider>(builder: (_, hp, _) {
                 if (hp.isLoading) {
                   return SliverToBoxAdapter(child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -589,35 +589,57 @@ class _GridPlaceCard extends StatefulWidget {
 
 class _GridPlaceCardState extends State<_GridPlaceCard> {
   bool _isFav = false, _loading = true;
+
   Place get place => widget.place;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   Future<void> _load() async {
     final s = await FavoriteService.isFavorite(widget.place.id);
-    if (mounted) setState(() { _isFav = s; _loading = false; });
+
+    if (mounted) {
+      setState(() {
+        _isFav = s;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _toggle() async {
     if (_loading) return;
+
     final next = !_isFav;
+
     setState(() => _isFav = next);
-    final result = await FavoriteService.togglePlace(widget.place, currentlySaved: !next);
+
+    final result = await FavoriteService.togglePlace(
+      widget.place,
+      currentlySaved: !next,
+    );
+
     if (!mounted) return;
-    if (result == FavoriteResult.limitReached) { setState(() => _isFav = false); _snack('Limit reached.'); }
-    else if (result == FavoriteResult.loginRequired) { setState(() => _isFav = false); _snack('Log in first.'); }
-    else if (result == FavoriteResult.failed) { setState(() => _isFav = !next); _snack('Could not update.'); }
+
+    if (result == FavoriteResult.limitReached) {
+      setState(() => _isFav = false);
+      _snack('Limit reached.');
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFav = false);
+      _snack('Log in first.');
+    } else if (result == FavoriteResult.failed) {
+      setState(() => _isFav = !next);
+      _snack('Could not update.');
+    }
   }
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
-
-  @override
-  State<_NearbyCard> createState() => _NearbyCardState();
-}
-
-class _NearbyCardState extends State<_NearbyCard> {
-  Place get place => widget.place;
+  void _snack(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -632,77 +654,189 @@ class _NearbyCardState extends State<_NearbyCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image with bookmark overlay
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                child: Stack(fit: StackFit.expand, children: [
-                  // Image
-                  place.imageUrls.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: place.imageUrls.first, fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
-                          errorWidget: (_, __, ___) => _imgFallback())
-                      : _imgFallback(),
-                  // Gradient
-                  const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
-                    colors: [Colors.transparent, Color(0x881A2B2A)],
-                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                    stops: [0.5, 1.0],
-                  ))),
-                  // Bookmark button top-right
-                  Positioned(top: 8, right: 8, child: GestureDetector(
-                    onTap: _toggle,
-                    child: Container(
-                      width: 30, height: 30,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    place.imageUrls.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: place.imageUrls.first,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) => Container(
+                              color: AppTheme.surfaceWarm,
+                            ),
+                            errorWidget: (_, _, _) => _imgFallback(),
+                          )
+                        : _imgFallback(),
+
+                    const DecoratedBox(
                       decoration: BoxDecoration(
-                        color: _isFav ? AppTheme.peach : Colors.white.withValues(alpha: 0.9),
-                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.transparent,
+                            Color(0x881A2B2A),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: [0.5, 1.0],
+                        ),
                       ),
-                      child: Icon(_isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                          color: _isFav ? Colors.white : AppTheme.peach, size: 16),
                     ),
-                  )),
-                  // Super user badge top-left
-                  if (place.ownerIsSuperUser)
-                    Positioned(top: 8, left: 8, child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(color: AppTheme.accent, borderRadius: BorderRadius.circular(20)),
-                      child: Text('Top', style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
-                    )),
-                ]),
+
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: _toggle,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: _isFav
+                                ? AppTheme.peach
+                                : Colors.white.withValues(alpha: 0.9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isFav
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: _isFav
+                                ? Colors.white
+                                : AppTheme.peach,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    if (place.ownerIsSuperUser)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Top',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-            // Info section
+
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(place.title, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Row(children: [
-                  Icon(Icons.location_on_rounded, size: 11, color: AppTheme.textLight),
-                  const SizedBox(width: 2),
-                  Expanded(child: Text(place.address.isNotEmpty ? place.address : place.category,
-                      style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                ]),
-                const SizedBox(height: 6),
-                Row(children: [
-                  // Stars
-                  ...List.generate(5, (i) => Icon(
-                    i < place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded,
-                    color: AppTheme.amber, size: 13,
-                  )),
-                  const SizedBox(width: 4),
-                  Text(place.averageRating.toStringAsFixed(1), style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textMid, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  // Budget badge — matches the teal price pill in reference
-                  if (place.budget.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(8)),
-                      child: Text(place.budget, style: GoogleFonts.poppins(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w700)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    place.title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textDark,
                     ),
-                ]),
-              ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_rounded,
+                        size: 11,
+                        color: AppTheme.textLight,
+                      ),
+
+                      const SizedBox(width: 2),
+
+                      Expanded(
+                        child: Text(
+                          place.address.isNotEmpty
+                              ? place.address
+                              : place.category,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppTheme.textLight,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Row(
+                    children: [
+                      ...List.generate(
+                        5,
+                        (i) => Icon(
+                          i < place.averageRating.round()
+                              ? Icons.star_rounded
+                              : Icons.star_outline_rounded,
+                          color: AppTheme.amber,
+                          size: 13,
+                        ),
+                      ),
+
+                      const SizedBox(width: 4),
+
+                      Text(
+                        place.averageRating.toStringAsFixed(1),
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppTheme.textMid,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      if (place.budget.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            place.budget,
+                            style: GoogleFonts.poppins(
+                              fontSize: 9,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -710,12 +844,21 @@ class _NearbyCardState extends State<_NearbyCard> {
     );
   }
 
-  Widget _imgFallback() => Container(
-    decoration: const BoxDecoration(gradient: AppTheme.headerGradient),
-    child: Center(child: Icon(Icons.image_outlined, color: Colors.white.withValues(alpha: 0.4), size: 36)),
-  );
+  Widget _imgFallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppTheme.headerGradient,
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          color: Colors.white54,
+          size: 36,
+        ),
+      ),
+    );
+  }
 }
-
 // ── Empty / Error ──────────────────────────────────────────────────────────────
 class _ErrorState extends StatelessWidget {
   final String message;

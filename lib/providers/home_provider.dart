@@ -281,4 +281,7 @@ class HomeProvider extends ChangeNotifier {
         return e.message ?? fallback;
     }
   }
+  Future<List<Place>> _loadCachedPlaces() async {
+  return [];
+}
 }

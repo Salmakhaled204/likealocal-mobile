@@ -179,7 +179,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       final reviews = await placeRef.collection('reviews').get();
       for (final r in reviews.docs) {
         final votes = await r.reference.collection('helpfulVotes').get();
-        for (final v in votes.docs) batch.delete(v.reference);
+        for (final v in votes.docs) {
+          batch.delete(v.reference);
+        }
         batch.delete(r.reference);
       }
       batch.delete(placeRef);
@@ -315,8 +317,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             itemBuilder: (_, i) => images[i].isEmpty
                 ? Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))
                 : CachedNetworkImage(imageUrl: images[i], fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
-                    errorWidget: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))),
+                    placeholder: (_, _) => Container(color: AppTheme.surfaceWarm),
+                    errorWidget: (_, _, _) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))),
           ),
           // Gradient overlay
           const DecoratedBox(decoration: BoxDecoration(gradient: AppTheme.heroGradient)),
