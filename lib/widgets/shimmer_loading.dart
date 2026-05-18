@@ -12,7 +12,7 @@ class ShimmerLoadingList extends StatelessWidget {
     return ListView.builder(
       itemCount: 3, shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemBuilder: (_, __) => Padding(
+      itemBuilder: (_, _) => Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Shimmer.fromColors(
           baseColor: AppTheme.surfaceWarm, highlightColor: AppTheme.surfaceHigh,
@@ -34,7 +34,7 @@ class ShimmerLoadingGrid extends StatelessWidget {
         crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 14, childAspectRatio: 0.78,
       ),
       itemCount: 4,
-      itemBuilder: (_, __) => Shimmer.fromColors(
+      itemBuilder: (_, _) => Shimmer.fromColors(
         baseColor: AppTheme.surfaceWarm, highlightColor: AppTheme.surfaceHigh,
         child: Container(decoration: BoxDecoration(color: AppTheme.surfaceWarm, borderRadius: BorderRadius.circular(18))),
       ),
@@ -50,7 +50,7 @@ class ShimmerLoadingHorizontal extends StatelessWidget {
       height: 200,
       child: ListView.builder(
         scrollDirection: Axis.horizontal, itemCount: 3,
-        itemBuilder: (_, __) => Padding(
+        itemBuilder: (_, _) => Padding(
           padding: const EdgeInsets.only(right: 14),
           child: Shimmer.fromColors(
             baseColor: AppTheme.surfaceWarm, highlightColor: AppTheme.surfaceHigh,
