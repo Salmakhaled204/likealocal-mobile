@@ -32,25 +32,221 @@ service cloud.firestore {
         && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
-    function safeUserRoleUpdate(userId) {
+    function safeUserUpdate(userId) {
       return isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'uid',
           'email',
+          'role',
+          'subscription',
+          'isPremium',
+          'isSuperUser',
+          'stats',
+          'limits',
+        ]);
+    }
+
+    function isNonEmptyString(value, maxLength) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maxLength;
+    }
+
+    function isOptionalString(value, maxLength) {
+      return value == null || (value is string && value.size() <= maxLength);
+    }
+
+    function isStringList(value, maxItems, maxLength) {
+      return value is list
+        && value.size() <= maxItems
+        && (value.size() == 0 || value[0] is string && value[0].size() <= maxLength)
+        && (value.size() <= 1 || value[1] is string && value[1].size() <= maxLength)
+        && (value.size() <= 2 || value[2] is string && value[2].size() <= maxLength)
+        && (value.size() <= 3 || value[3] is string && value[3].size() <= maxLength)
+        && (value.size() <= 4 || value[4] is string && value[4].size() <= maxLength)
+        && (value.size() <= 5 || value[5] is string && value[5].size() <= maxLength)
+        && (value.size() <= 6 || value[6] is string && value[6].size() <= maxLength)
+        && (value.size() <= 7 || value[7] is string && value[7].size() <= maxLength)
+        && (value.size() <= 8 || value[8] is string && value[8].size() <= maxLength)
+        && (value.size() <= 9 || value[9] is string && value[9].size() <= maxLength)
+        && (value.size() <= 10 || value[10] is string && value[10].size() <= maxLength)
+        && (value.size() <= 11 || value[11] is string && value[11].size() <= maxLength)
+        && (value.size() <= 12 || value[12] is string && value[12].size() <= maxLength)
+        && (value.size() <= 13 || value[13] is string && value[13].size() <= maxLength)
+        && (value.size() <= 14 || value[14] is string && value[14].size() <= maxLength);
+    }
+
+    function validPlaceData() {
+      return request.resource.data.keys().hasOnly([
+          'title',
+          'description',
+          'category',
+          'budget',
+          'atmosphere',
+          'localTip',
+          'recommendedDish',
+          'address',
+          'imageUrls',
+          'videoUrls',
+          'location',
+          'createdBy',
+          'createdByName',
+          'ownerId',
+          'ownerIsSuperUser',
+          'averageRating',
+          'reviewCount',
+          'createdAt',
+          'updatedAt',
         ])
-        && (
-          request.resource.data.role == resource.data.role
-          || request.resource.data.role == 'contributor'
-          || (
-            request.resource.data.role == 'super_user'
-            && request.resource.data.stats.totalContributions >= 10
-            && request.resource.data.stats.averageRating >= 4.3
-            && request.resource.data.stats.reportCount <= 2
-            && request.resource.data.stats.helpfulVotes >= 20
-          )
-        )
-        && request.resource.data.role != 'admin'
-        && request.resource.data.subscription in ['free', 'premium'];
+        && isNonEmptyString(request.resource.data.title, 120)
+        && isNonEmptyString(request.resource.data.description, 1000)
+        && request.resource.data.category in [
+          'Restaurants',
+          'Hidden Gems',
+          'Experiences',
+          'Cafes',
+          'Nightlife',
+          'Museum',
+          'Shopping',
+          'Other',
+        ]
+        && request.resource.data.budget in ['Cheap', 'Medium', 'Expensive']
+        && request.resource.data.atmosphere in [
+          'Quiet',
+          'Fun',
+          'Family',
+          'Friends',
+          'Romantic',
+        ]
+        && isOptionalString(request.resource.data.localTip, 300)
+        && isOptionalString(request.resource.data.recommendedDish, 120)
+        && isNonEmptyString(request.resource.data.address, 300)
+        && isStringList(request.resource.data.imageUrls, 15, 500)
+        && isStringList(request.resource.data.videoUrls, 5, 500)
+        && request.resource.data.location is latlng
+        && request.resource.data.createdBy == request.resource.data.ownerId
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByName.size() <= 120
+        && request.resource.data.ownerId is string
+        && request.resource.data.ownerIsSuperUser is bool
+        && request.resource.data.averageRating is number
+        && request.resource.data.averageRating >= 0
+        && request.resource.data.averageRating <= 5
+        && request.resource.data.reviewCount is int
+        && request.resource.data.reviewCount >= 0
+        && request.resource.data.updatedAt is timestamp
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
+    }
+
+    function validPlaceCreate() {
+      return validPlaceData()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.averageRating == 0
+        && request.resource.data.reviewCount == 0
+        && request.resource.data.ownerIsSuperUser == (currentUserData().role == 'super_user');
+    }
+
+    function validPlaceUpdate() {
+      return validPlaceData()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.ownerIsSuperUser == resource.data.ownerIsSuperUser
+        && request.resource.data.averageRating == resource.data.averageRating
+        && request.resource.data.reviewCount == resource.data.reviewCount;
+    }
+
+    function validReviewCreate(reviewId) {
+      return createsOwnReview(reviewId)
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'userEmail',
+          'userName',
+          'text',
+          'rating',
+          'createdAt',
+          'updatedAt',
+        ])
+        && isOptionalString(request.resource.data.userEmail, 254)
+        && isOptionalString(request.resource.data.userName, 120)
+        && isNonEmptyString(request.resource.data.text, 300)
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validReviewUpdate() {
+      return ownsReview()
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'userEmail',
+          'userName',
+          'text',
+          'rating',
+          'createdAt',
+          'updatedAt',
+        ])
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isOptionalString(request.resource.data.userEmail, 254)
+        && isOptionalString(request.resource.data.userName, 120)
+        && isNonEmptyString(request.resource.data.text, 300)
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validChatCreate() {
+      return request.resource.data.keys().hasOnly([
+          'participants',
+          'participantNames',
+          'lastMessage',
+          'lastMessageTime',
+          'createdAt',
+          'unreadCount_' + request.resource.data.participants[0],
+          'unreadCount_' + request.resource.data.participants[1],
+        ])
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participantNames is map
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 500
+        && request.resource.data.lastMessageTime is timestamp
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function validChatUpdate() {
+      return request.resource.data.participants == resource.data.participants
+        && request.resource.data.participantNames == resource.data.participantNames
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessage',
+          'lastMessageTime',
+          'unreadCount_' + request.auth.uid,
+          'unreadCount_' + resource.data.participants[0],
+          'unreadCount_' + resource.data.participants[1],
+        ])
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 500
+        && request.resource.data.lastMessageTime is timestamp;
+    }
+
+    function validMessageCreate(chatId) {
+      return request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+        && request.resource.data.keys().hasOnly([
+          'senderId',
+          'senderName',
+          'text',
+          'timestamp',
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && isOptionalString(request.resource.data.senderName, 120)
+        && isNonEmptyString(request.resource.data.text, 500)
+        && request.resource.data.timestamp is timestamp;
     }
 
     function ownsReview() {
@@ -69,7 +265,7 @@ service cloud.firestore {
         && request.resource.data.role == 'regular'
         && request.resource.data.subscription == 'free';
       allow read: if isOwner(userId) || isAdmin();
-      allow update: if safeUserRoleUpdate(userId) || isAdmin();
+      allow update: if safeUserUpdate(userId) || isAdmin();
       allow delete: if isAdmin();
 
       match /favorites/{placeId} {
@@ -83,26 +279,30 @@ service cloud.firestore {
 
     match /places/{placeId} {
       allow read: if true;
-      allow create: if canAddPlaces()
-        && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if canManagePlace();
+      allow create: if canAddPlaces() && validPlaceCreate();
+      allow update: if canManagePlace() && validPlaceUpdate();
+      allow delete: if canManagePlace();
 
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if createsOwnReview(reviewId);
-        allow update, delete: if ownsReview() || isAdmin();
+        allow create: if validReviewCreate(reviewId);
+        allow update: if validReviewUpdate() || isAdmin();
+        allow delete: if ownsReview() || isAdmin();
       }
     }
 
     match /chats/{chatId} {
-      allow read, update: if isSignedIn()
+      allow read: if isSignedIn()
         && request.auth.uid in resource.data.participants;
-      allow create: if isSignedIn()
-        && request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.participants
+        && validChatUpdate();
+      allow create: if isSignedIn() && validChatCreate();
 
       match /messages/{messageId} {
-        allow read, create: if isSignedIn()
+        allow read: if isSignedIn()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if isSignedIn() && validMessageCreate(chatId);
       }
     }
   }

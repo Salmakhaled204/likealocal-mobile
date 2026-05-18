@@ -13,9 +13,6 @@ import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -377,7 +374,11 @@ class _LoginScreenState extends State<LoginScreen> {
         email: email,
         password: _passCtrl.text.trim(),
       );
-      final user = cred.user!;
+      final user = cred.user;
+      if (user == null) {
+        _setMsg('Could not create account. Please try again.', error: true);
+        return;
+      }
       await user.updateDisplayName(name);
       await FirebaseFirestore.instance
           .collection('users')

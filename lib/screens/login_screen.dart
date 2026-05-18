@@ -6,7 +6,7 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
@@ -84,13 +84,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       // Create user
-      UserCredential userCredential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
+      UserCredential userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: emailController.text.trim(),
+            password: passwordController.text.trim(),
+          );
 
-      String uid = userCredential.user!.uid;
+      final user = userCredential.user;
+      if (user == null) {
+        error = "Signup failed";
+        return;
+      }
+      String uid = user.uid;
 
       // Save user in database
       final dbRef = FirebaseDatabase.instance.ref();
@@ -101,7 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
         "chatEnabled": true,
         "createdAt": DateTime.now().toString(),
       });
-
     } on FirebaseAuthException catch (e) {
       if (e.code == 'email-already-in-use') {
         error = "Email already in use";
@@ -128,7 +132,6 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
-
             // 📧 Email
             TextField(
               controller: emailController,
@@ -149,24 +152,15 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(height: 10),
 
             // 🔐 Login
-            ElevatedButton(
-              onPressed: login,
-              child: Text("Login"),
-            ),
+            ElevatedButton(onPressed: login, child: Text("Login")),
 
             // 🆕 Signup
-            ElevatedButton(
-              onPressed: signup,
-              child: Text("Sign Up"),
-            ),
+            ElevatedButton(onPressed: signup, child: Text("Sign Up")),
 
             SizedBox(height: 10),
 
             // ❌ Error message
-            Text(
-              error,
-              style: TextStyle(color: Colors.red),
-            ),
+            Text(error, style: TextStyle(color: Colors.red)),
           ],
         ),
       ),

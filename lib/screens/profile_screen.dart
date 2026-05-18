@@ -71,7 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _aiRecommendationsEnabled = true;
   UserRole _userRole = UserRole.regularFree();
 
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
@@ -89,10 +89,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
+    final uid = _uid;
+    if (uid == null) {
+      if (mounted) {
+        setState(() {
+          _error = 'Please sign in to view your profile.';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(_uid)
+          .doc(uid)
           .get();
       if (doc.exists) {
         final data = doc.data()!;
@@ -114,13 +125,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _aiRecommendationsEnabled = data['aiRecommendationsEnabled'] ?? true;
         _userRole = UserRole.fromData(data);
       } else {
-        final user = FirebaseAuth.instance.currentUser!;
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) return;
         await FirebaseFirestore.instance
             .collection('users')
-            .doc(_uid)
+            .doc(uid)
             .set(
               UserRole.defaultFirestoreData(
-                uid: _uid,
+                uid: uid,
                 email: user.email ?? '',
                 name: user.displayName ?? '',
                 photoUrl: user.photoURL ?? '',
@@ -135,6 +147,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
+    final uid = _uid;
+    if (uid == null) {
+      setState(() => _error = 'Please sign in to save your profile.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _isSaving = true;
@@ -144,7 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final name = _nameController.text.trim();
       await FirebaseAuth.instance.currentUser?.updateDisplayName(name);
-      await FirebaseFirestore.instance.collection('users').doc(_uid).set({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'displayName': name,
         'bio': _bioController.text.trim(),
         'photoUrl': _photoUrlController.text.trim(),
@@ -179,47 +196,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _error = 'Failed to save. Please try again.');
     } finally {
       if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<void> _becomeContributor() async {
-    if (_userRole.isAdmin || _userRole.isContributor || _userRole.isSuperUser) {
-      return;
-    }
-    await FirebaseFirestore.instance.collection('users').doc(_uid).set({
-      'role': AppUserRole.contributor,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    if (mounted) {
-      setState(
-        () => _userRole = UserRole.fromData({
-          ..._userRole.toFirestore(),
-          'role': AppUserRole.contributor,
-        }),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contributor access enabled.')),
-      );
-    }
-  }
-
-  Future<void> _activatePremiumDemo() async {
-    if (_userRole.isPremium) return;
-    await FirebaseFirestore.instance.collection('users').doc(_uid).set({
-      'subscription': AppSubscription.premium,
-      'isPremium': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    if (mounted) {
-      setState(
-        () => _userRole = UserRole.fromData({
-          ..._userRole.toFirestore(),
-          'subscription': AppSubscription.premium,
-        }),
-      );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Premium demo enabled.')));
     }
   }
 
@@ -303,11 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
                     _RoleSummary(role: _userRole),
                     const SizedBox(height: 12),
-                    _RoleActions(
-                      role: _userRole,
-                      onBecomeContributor: _becomeContributor,
-                      onActivatePremium: _activatePremiumDemo,
-                    ),
+                    _RoleActions(role: _userRole),
                     const SizedBox(height: 28),
 
                     // Display Name
@@ -805,14 +777,8 @@ class _RoleSummary extends StatelessWidget {
 
 class _RoleActions extends StatelessWidget {
   final UserRole role;
-  final VoidCallback onBecomeContributor;
-  final VoidCallback onActivatePremium;
 
-  const _RoleActions({
-    required this.role,
-    required this.onBecomeContributor,
-    required this.onActivatePremium,
-  });
+  const _RoleActions({required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -820,17 +786,15 @@ class _RoleActions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (role.isRegular)
-          OutlinedButton.icon(
-            onPressed: onBecomeContributor,
-            icon: const Icon(Icons.add_location_alt_outlined),
-            label: const Text('Become a Contributor'),
+          Text(
+            'Contributor access is reviewed by an admin before place uploads are enabled.',
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
           ),
         if (!role.isPremium) ...[
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: onActivatePremium,
-            icon: const Icon(Icons.diamond_outlined),
-            label: const Text('Activate Premium demo'),
+          Text(
+            'Premium access is assigned securely and cannot be activated inside the app.',
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
           ),
         ],
         if (role.isAdmin)

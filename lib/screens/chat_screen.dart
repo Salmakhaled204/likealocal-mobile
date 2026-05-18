@@ -22,7 +22,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
@@ -39,24 +39,35 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Resets the unread counter for the current user when they open the chat.
   Future<void> _markAsRead() async {
+    final uid = _uid;
+    if (uid == null) return;
     await FirebaseFirestore.instance
         .collection('chats')
         .doc(widget.chatId)
-        .update({'unreadCount_$_uid': 0});
+        .update({'unreadCount_$uid': 0});
   }
 
   Future<void> _sendMessage() async {
+    final uid = _uid;
+    final user = FirebaseAuth.instance.currentUser;
+    if (uid == null || user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please sign in to chat.')));
+      return;
+    }
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     _controller.clear();
 
-    final user = FirebaseAuth.instance.currentUser!;
     final now = FieldValue.serverTimestamp();
-    final chatRef = FirebaseFirestore.instance.collection('chats').doc(widget.chatId);
+    final chatRef = FirebaseFirestore.instance
+        .collection('chats')
+        .doc(widget.chatId);
 
     // Add the message to the subcollection
     await chatRef.collection('messages').add({
-      'senderId': _uid,
+      'senderId': uid,
       'senderName': user.displayName ?? '',
       'text': text,
       'timestamp': now,
@@ -89,6 +100,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
+    if (uid == null) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.black),
+          title: const Text('Messages', style: TextStyle(color: Colors.black)),
+        ),
+        body: const Center(child: Text('Please sign in to view messages.')),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -144,7 +169,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(
                     child: Text(
                       'Say hello! 👋',
-                      style: GoogleFonts.inter(color: Colors.grey[400], fontSize: 16),
+                      style: GoogleFonts.inter(
+                        color: Colors.grey[400],
+                        fontSize: 16,
+                      ),
                     ),
                   );
                 }
@@ -166,7 +194,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
-                    final isMe = data['senderId'] == _uid;
+                    final isMe = data['senderId'] == uid;
                     final text = data['text'] as String? ?? '';
                     final ts = data['timestamp'] as Timestamp?;
 
@@ -222,7 +250,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: Colors.blue[600],
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ),
               ],
@@ -237,16 +269,22 @@ class _ChatScreenState extends State<ChatScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Flexible(
             child: Column(
-              crossAxisAlignment:
-                  isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isMe
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.72,
                   ),
@@ -278,7 +316,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 const SizedBox(height: 3),
                 Text(
                   time,
-                  style: GoogleFonts.inter(fontSize: 10, color: Colors.grey[400]),
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: Colors.grey[400],
+                  ),
                 ),
               ],
             ),

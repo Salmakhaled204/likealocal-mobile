@@ -314,7 +314,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         }
         return;
       }
-      final isSuperUser = role.isSuperUser;
+      final isSuperUser = _isEditing
+          ? widget.placeToEdit!.ownerIsSuperUser
+          : role.isSuperUser;
       final userName = userDoc.data()?['displayName'] ?? 'Anonymous';
 
       final docRef = _isEditing
@@ -337,12 +339,12 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
           _pickedLocation!.latitude,
           _pickedLocation!.longitude,
         ),
-        'createdBy': user.uid,
-        'createdByName': userName,
-        'ownerId': user.uid,
+        'createdBy': _isEditing ? widget.placeToEdit!.ownerId : user.uid,
+        'createdByName': _isEditing ? widget.placeToEdit!.ownerName : userName,
+        'ownerId': _isEditing ? widget.placeToEdit!.ownerId : user.uid,
         'ownerIsSuperUser': isSuperUser,
-        'averageRating': 0.0,
-        'reviewCount': 0,
+        'averageRating': _isEditing ? widget.placeToEdit!.averageRating : 0.0,
+        'reviewCount': _isEditing ? widget.placeToEdit!.reviewCount : 0,
         if (!_isEditing) 'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -362,32 +364,6 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       await docRef.update({
         'imageUrls': [..._existingImageUrls, ...imageUrls],
       });
-
-      if (!_isEditing) {
-        final nextTotal = role.stats.totalContributions + 1;
-        final promotedRole =
-            UserRole(
-              role: role.role,
-              subscription: role.subscription,
-              stats: UserStats(
-                totalContributions: nextTotal,
-                totalReviews: role.stats.totalReviews,
-                helpfulVotes: role.stats.helpfulVotes,
-                averageRating: role.stats.averageRating,
-                reportCount: role.stats.reportCount,
-              ),
-              limits: role.limits,
-            ).qualifiesForSuperUser
-            ? AppUserRole.superUser
-            : role.role;
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'role': promotedRole,
-          'isSuperUser': promotedRole == AppUserRole.superUser,
-          'contributionCount': FieldValue.increment(1),
-          'stats': {'totalContributions': FieldValue.increment(1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

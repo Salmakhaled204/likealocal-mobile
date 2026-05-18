@@ -202,7 +202,6 @@ Keep responses friendly, concise, and practical. Use bullet points for lists. As
       return false;
     }
     await userRef.set({
-      'limits': {'aiRequestsToday': FieldValue.increment(1)},
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     return true;

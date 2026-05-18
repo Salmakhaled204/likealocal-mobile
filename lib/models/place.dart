@@ -44,7 +44,37 @@ class Place {
   });
 
   factory Place.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    final rawData = doc.data();
+    final data = rawData is Map<String, dynamic>
+        ? rawData
+        : <String, dynamic>{};
+
+    String readString(String key, [String fallback = '']) {
+      final value = data[key];
+      return value is String ? value : fallback;
+    }
+
+    List<String> readStringList(String key) {
+      final value = data[key];
+      if (value is! List) return <String>[];
+      return value.whereType<String>().toList();
+    }
+
+    double readDouble(String key) {
+      final value = data[key];
+      return value is num ? value.toDouble() : 0.0;
+    }
+
+    int readInt(String key) {
+      final value = data[key];
+      return value is num ? value.toInt() : 0;
+    }
+
+    GeoPoint readGeoPoint(String key) {
+      final value = data[key];
+      return value is GeoPoint ? value : const GeoPoint(0, 0);
+    }
+
     DateTime? timestampToDate(dynamic value) {
       if (value is Timestamp) return value.toDate();
       return null;
@@ -52,23 +82,25 @@ class Place {
 
     return Place(
       id: doc.id,
-      title: data['title'] ?? '',
-      description: data['description'] ?? '',
-      category: data['category'] ?? 'Other',
-      imageUrls: List<String>.from(data['imageUrls'] ?? []),
-      videoUrls: List<String>.from(data['videoUrls'] ?? []),
-      location: data['location'] ?? const GeoPoint(0, 0),
-      address: data['address'] ?? '',
-      budget: data['budget'] ?? '',
-      atmosphere: data['atmosphere'] ?? '',
-      localTip: data['localTip'] ?? '',
-      recommendedDish: data['recommendedDish'] ?? '',
-      ownerId: data['ownerId'] ?? '',
-      ownerName:
-          data['createdByName'] ?? data['ownerName'] ?? 'Local contributor',
-      ownerIsSuperUser: data['ownerIsSuperUser'] ?? false,
-      averageRating: (data['averageRating'] ?? 0.0).toDouble(),
-      reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+      title: readString('title'),
+      description: readString('description'),
+      category: readString('category', 'Other'),
+      imageUrls: readStringList('imageUrls'),
+      videoUrls: readStringList('videoUrls'),
+      location: readGeoPoint('location'),
+      address: readString('address'),
+      budget: readString('budget'),
+      atmosphere: readString('atmosphere'),
+      localTip: readString('localTip'),
+      recommendedDish: readString('recommendedDish'),
+      ownerId: readString('ownerId'),
+      ownerName: readString(
+        'createdByName',
+        readString('ownerName', 'Local contributor'),
+      ),
+      ownerIsSuperUser: data['ownerIsSuperUser'] == true,
+      averageRating: readDouble('averageRating'),
+      reviewCount: readInt('reviewCount'),
       createdAt: timestampToDate(data['createdAt']),
       updatedAt: timestampToDate(data['updatedAt']),
     );

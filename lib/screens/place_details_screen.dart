@@ -103,17 +103,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           'placeId': _placeId,
           'savedAt': FieldValue.serverTimestamp(),
         });
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'limits': {'pinsUsed': FieldValue.increment(1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
       } else {
         if (mounted) setState(() => _isFavorite = false);
         await ref.delete();
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'limits': {'pinsUsed': FieldValue.increment(-1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
       }
     } catch (_) {
       if (mounted) {
@@ -138,7 +130,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     }
     setState(() => _isSubmittingReview = true);
     try {
-      final user = FirebaseAuth.instance.currentUser!;
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _snack('Log in to leave a review.');
+        return;
+      }
       final ref = FirebaseFirestore.instance
           .collection('places')
           .doc(_placeId)
@@ -282,7 +278,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         }, SetOptions(merge: true));
     if (!alreadySaved) {
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'limits': {'remindersUsed': FieldValue.increment(1)},
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
