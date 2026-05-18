@@ -58,7 +58,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   }
 
   Future<void> _toggleFavorite(Place place) async {
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
     final next = !_isFavorite;
     if (mounted) setState(() => _isFavorite = next);
     final result = await FavoriteService.togglePlace(place, currentlySaved: !next);
@@ -167,7 +167,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     }
     setState(() => _isSubmittingReview = true);
     try {
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
       final user = FirebaseAuth.instance.currentUser!;
       final ref = FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(_editingReviewId ?? uid);
 =========
@@ -290,7 +290,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       'placeId': place.id, 'title': place.title, 'location': place.location, 'enabled': true, 'radiusMeters': 300, 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     if (!alreadySaved) {
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
       await FirebaseFirestore.instance.collection('users').doc(uid).set({'limits': {'remindersUsed': FieldValue.increment(1)}, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
 =========
       await FirebaseFirestore.instance.collection('users').doc(uid).set({

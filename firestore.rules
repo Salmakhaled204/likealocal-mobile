@@ -314,7 +314,7 @@ service cloud.firestore {
         && request.resource.data.role == 'regular'
         && request.resource.data.subscription == 'free';
       allow read: if isOwner(userId) || isAdmin();
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
       allow update: if safeUserUpdate(userId)
         || updatesHelpfulStatOnly()
         || isAdmin();
@@ -344,7 +344,7 @@ service cloud.firestore {
 
       match /reviews/{reviewId} {
         allow read: if true;
-<<<<<<<<< Temporary merge branch 1
+Temporary merge branch 1
         allow create: if createsOwnReview(reviewId);
         allow update: if ownsReview() || isAdmin() || updatesHelpfulCountOnly();
         allow delete: if ownsReview() || isAdmin();

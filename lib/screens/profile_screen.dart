@@ -905,7 +905,7 @@ class _RoleSummary extends StatelessWidget {
 
 class _RoleActions extends StatelessWidget {
   final UserRole role;
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
   final VoidCallback onBecomeContributor;
 
   const _RoleActions({

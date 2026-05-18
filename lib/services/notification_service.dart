@@ -257,7 +257,7 @@ class NotificationService {
         });
   }
 
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
   static Future<void> syncTokenForCurrentUser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -285,7 +285,7 @@ class NotificationService {
   }
 
   static Future<void> _updateToken(String token) async {
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {

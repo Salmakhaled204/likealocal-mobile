@@ -585,7 +585,7 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-<<<<<<<<< Temporary merge branch 1
+Temporary merge branch 1
             Icon(active ? activeIcon : icon, color: active ? AppTheme.primary : AppTheme.textLight, size: 24),
             const SizedBox(height: 3),
             Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: active ? FontWeight.w700 : FontWeight.w400, color: active ? AppTheme.primary : AppTheme.textLight)),
@@ -1243,7 +1243,7 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
                 child: Stack(fit: StackFit.expand, children: [
                   // Image
                   place.imageUrls.isNotEmpty
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
                       ? CachedNetworkImage(imageUrl: place.imageUrls.first, fit: BoxFit.cover,
                           placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
                           errorWidget: (_, __, ___) => _imgFallback())
@@ -1317,7 +1317,7 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
                       fontWeight: FontWeight.w700,
                       color: AppTheme.textDark,
                     ),
-<<<<<<<<< Temporary merge branch 1
+ Temporary merge branch 1
                 ]),
               ]),
 =========
