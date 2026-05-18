@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
@@ -44,7 +45,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return '${diff.inDays}d ago';
   }
 
-  IconData _iconForType(String? type) {
+  IconData _iconFor(String? type) {
     switch (type) {
       case 'proximity':
         return Icons.location_on_rounded;
@@ -57,175 +58,328 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Color _colorForType(String? type) {
+  // All notification types map to teal palette colours — no external accents needed
+  Color _colorFor(String? type) {
     switch (type) {
       case 'proximity':
-        return AppTheme.mint;
+        return AppTheme.primary; // teal
       case 'chat':
-        return AppTheme.softBlue;
+        return AppTheme.softBlue; // periwinkle
       case 'recommendation':
-        return AppTheme.primary;
+        return AppTheme.accent; // bright teal
       default:
-        return AppTheme.peach;
+        return AppTheme.amber; // warm amber for general
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text(
-          'Notifications',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.overlayDark,
+      child: Scaffold(
         backgroundColor: AppTheme.background,
-        elevation: 0,
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uid)
-            .collection('notifications')
-            .orderBy('createdAt', descending: true)
-            .limit(50)
-            .snapshots(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final docs = snap.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.primaryLight,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.notifications_none_rounded,
-                        size: 36,
-                        color: AppTheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No notifications yet',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "We'll notify you about nearby places & messages",
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: AppTheme.textLight,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Teal header ────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 56, 20, 28),
+              decoration: const BoxDecoration(
+                gradient: AppTheme.headerGradient,
+                borderRadius:
+                    BorderRadius.vertical(bottom: Radius.circular(28)),
               ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            itemCount: docs.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, i) {
-              final data = docs[i].data() as Map<String, dynamic>;
-              final type = data['type'] as String?;
-              final isRead = data['read'] == true;
-
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: isRead ? AppTheme.surface : AppTheme.primaryLight,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isRead ? AppTheme.border : AppTheme.primaryDim,
-                  ),
-                  boxShadow: isRead ? null : AppTheme.softShadow,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: _colorForType(type).withValues(alpha: 0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.2)),
                       ),
-                      child: Icon(
-                        _iconForType(type),
-                        color: _colorForType(type),
-                        size: 20,
-                      ),
+                      child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 18),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            data['title'] ?? '',
-                            style: GoogleFonts.poppins(
-                              fontWeight: isRead
-                                  ? FontWeight.w500
-                                  : FontWeight.w600,
-                              fontSize: 14,
-                              color: AppTheme.textDark,
-                            ),
-                          ),
-                          if ((data['body'] ?? '').toString().isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              data['body'] ?? '',
+                          Text('Notifications',
                               style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                color: AppTheme.textMid,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Text(
-                            _timeAgo(data['createdAt'] as Timestamp?),
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: AppTheme.textLight,
-                            ),
-                          ),
-                        ],
-                      ),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white)),
+                          Text('Stay up to date',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: Colors.white60)),
+                        ]),
+                  ),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2)),
                     ),
-                    if (!isRead)
-                      Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(top: 4),
-                        decoration: const BoxDecoration(
-                          color: AppTheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                  ],
+                    child: const Icon(Icons.notifications_rounded,
+                        color: Colors.white, size: 22),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Notification list ──────────────────────────────────────────
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(_uid)
+                    .collection('notifications')
+                    .orderBy('createdAt', descending: true)
+                    .limit(50)
+                    .snapshots(),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: AppTheme.primary));
+                  }
+
+                  final docs = snap.data?.docs ?? [];
+
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                  color: AppTheme.primaryLight,
+                                  shape: BoxShape.circle),
+                              child: const Icon(
+                                  Icons.notifications_off_outlined,
+                                  size: 40,
+                                  color: AppTheme.primary),
+                            ),
+                            const SizedBox(height: 18),
+                            Text('No notifications yet',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textDark)),
+                            const SizedBox(height: 6),
+                            Text(
+                                "We'll notify you when\nsomething happens",
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    color: AppTheme.textLight)),
+                          ]),
+                    );
+                  }
+
+                  // Group: Today vs Earlier
+                  final today = <DocumentSnapshot>[];
+                  final earlier = <DocumentSnapshot>[];
+                  for (final doc in docs) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final ts = d['createdAt'] as Timestamp?;
+                    final isToday = ts != null &&
+                        DateTime.now()
+                                .difference(ts.toDate())
+                                .inHours <
+                            24;
+                    (isToday ? today : earlier).add(doc);
+                  }
+
+                  return ListView(
+                    padding:
+                        const EdgeInsets.fromLTRB(20, 16, 20, 40),
+                    children: [
+                      if (today.isNotEmpty) ...[
+                        _SectionLabel('Today'),
+                        ...today.map((doc) => _NotifCard(
+                              doc: doc,
+                              iconFor: _iconFor,
+                              colorFor: _colorFor,
+                              timeAgo: _timeAgo,
+                            )),
+                      ],
+                      if (earlier.isNotEmpty) ...[
+                        if (today.isNotEmpty)
+                          const SizedBox(height: 6),
+                        _SectionLabel('Earlier'),
+                        ...earlier.map((doc) => _NotifCard(
+                              doc: doc,
+                              iconFor: _iconFor,
+                              colorFor: _colorFor,
+                              timeAgo: _timeAgo,
+                            )),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Section label ──────────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.primary,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Notification card ──────────────────────────────────────────────────────────
+class _NotifCard extends StatelessWidget {
+  final DocumentSnapshot doc;
+  final IconData Function(String?) iconFor;
+  final Color Function(String?) colorFor;
+  final String Function(Timestamp?) timeAgo;
+
+  const _NotifCard({
+    required this.doc,
+    required this.iconFor,
+    required this.colorFor,
+    required this.timeAgo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final d = doc.data() as Map<String, dynamic>;
+    final type = d['type'] as String?;
+    final read = d['read'] == true;
+    final color = colorFor(type);
+    final title = (d['title'] as String?) ?? 'Notification';
+    final body = (d['body'] as String?) ?? '';
+    final ts = d['createdAt'] as Timestamp?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: read
+              ? AppTheme.border
+              : color.withValues(alpha: 0.35),
+          width: read ? 1 : 1.5,
+        ),
+        boxShadow: read
+            ? AppTheme.softShadow
+            : [
+                ...AppTheme.softShadow,
+                BoxShadow(
+                  color: color.withValues(alpha: 0.1),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
                 ),
-              );
-            },
-          );
-        },
+              ],
+      ),
+      child: Row(
+        children: [
+          // Icon container
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                  color: color.withValues(alpha: 0.25)),
+            ),
+            child: Icon(iconFor(type), color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          // Text content
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight:
+                          read ? FontWeight.w500 : FontWeight.w700,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                  if (body.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      body,
+                      style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: AppTheme.textMid,
+                          height: 1.4),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 5),
+                  Text(
+                    timeAgo(ts),
+                    style: GoogleFonts.poppins(
+                        fontSize: 11, color: AppTheme.textLight),
+                  ),
+                ]),
+          ),
+          // Unread dot
+          if (!read) ...[
+            const SizedBox(width: 10),
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.45),
+                    blurRadius: 6,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
