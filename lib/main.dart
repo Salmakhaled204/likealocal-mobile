@@ -401,7 +401,11 @@ class _LoginScreenState extends State<LoginScreen> {
         email: email,
         password: _passCtrl.text.trim(),
       );
-      final user = cred.user!;
+      final user = cred.user;
+      if (user == null) {
+        _setMsg('Could not create account. Please try again.', error: true);
+        return;
+      }
       await user.updateDisplayName(name);
       await FirebaseFirestore.instance
           .collection('users')

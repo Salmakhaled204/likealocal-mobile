@@ -7,7 +7,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../providers/home_provider.dart';
 import '../models/place.dart';
 import '../models/user_role.dart';
 import '../services/favorite_service.dart';
@@ -612,6 +611,13 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
   }
 
   void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  @override
+  State<_NearbyCard> createState() => _NearbyCardState();
+}
+
+class _NearbyCardState extends State<_NearbyCard> {
+  Place get place => widget.place;
 
   @override
   Widget build(BuildContext context) {

@@ -243,15 +243,16 @@ class NotificationService {
     });
   }
 
-  static Future<void> syncTokenForCurrentUser() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+  static Future<void> _saveToken() async {
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'fcmToken': token,
-      });
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       if (kDebugMode) print('FCM token saved: $token');
     } catch (e) {
       if (kDebugMode) print('Could not save FCM token: $e');
@@ -259,14 +260,15 @@ class NotificationService {
   }
 
   static Future<void> _updateToken(String token) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'fcmToken': token,
-      });
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } catch (e) {
-      if (kDebugMode) print('Could not refresh FCM token: $e');
+      if (kDebugMode) print('Could not update FCM token: $e');
     }
   }
 }
