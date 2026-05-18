@@ -171,7 +171,7 @@ class HomeProvider extends ChangeNotifier {
       if (kDebugMode) print('HomeProvider.fetchPlaces: ${e.code} ${e.message}');
       await _fallbackToCache();
     } catch (e) {
-      _places = await _loadCachedPlaces();
+      _places = await _loadPlacesFromCache();
       _errorMessage = 'Failed to load places. Please try again.';
       if (kDebugMode) print('HomeProvider.fetchPlaces: $e');
       await _fallbackToCache();
