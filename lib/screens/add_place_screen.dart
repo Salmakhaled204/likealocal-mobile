@@ -19,6 +19,40 @@ class AddPlaceScreen extends StatefulWidget {
   State<AddPlaceScreen> createState() => _AddPlaceScreenState();
 }
 
+class _VideoPickedTile extends StatelessWidget {
+  final String label;
+  final VoidCallback? onRemove;
+
+  const _VideoPickedTile({required this.label, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.play_circle_outline, color: Colors.blueGrey),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: onRemove,
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AddPlaceScreenState extends State<AddPlaceScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
@@ -53,7 +87,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   ];
 
   List<XFile> _selectedImages = [];
+  List<XFile> _selectedVideos = [];
   List<String> _existingImageUrls = [];
+  List<String> _existingVideoUrls = [];
   final ImagePicker _picker = ImagePicker();
 
   LatLng? _pickedLocation;
@@ -84,6 +120,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     _latitudeController.text = place.location.latitude.toStringAsFixed(6);
     _longitudeController.text = place.location.longitude.toStringAsFixed(6);
     _existingImageUrls = List<String>.from(place.imageUrls);
+    _existingVideoUrls = List<String>.from(place.videoUrls);
   }
 
   @override
@@ -124,6 +161,29 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       }
     } catch (e) {
       setState(() => _error = 'Could not pick images.');
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final hasVideo =
+          _existingVideoUrls.isNotEmpty || _selectedVideos.isNotEmpty;
+      if (hasVideo) {
+        setState(() => _error = 'You can attach one video per place.');
+        return;
+      }
+      final video = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 2),
+      );
+      if (video != null) {
+        setState(() {
+          _selectedVideos = [video];
+          _error = null;
+        });
+      }
+    } catch (_) {
+      setState(() => _error = 'Could not pick video.');
     }
   }
 
@@ -269,6 +329,26 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     return urls;
   }
 
+  Future<List<String>> _uploadVideos(String placeId) async {
+    final List<String> urls = [];
+
+    for (int i = 0; i < _selectedVideos.length; i++) {
+      final file = File(_selectedVideos[i].path);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.mp4';
+      final ref = FirebaseStorage.instance.ref().child(
+        'places/$placeId/videos/$fileName',
+      );
+
+      final uploadTask = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'video/mp4'),
+      );
+      urls.add(await uploadTask.ref.getDownloadURL());
+    }
+
+    return urls;
+  }
+
   Future<void> _savePlace() async {
     if (!_formKey.currentState!.validate()) return;
     if (_pickedLocation == null) {
@@ -332,7 +412,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'recommendedDish': _recommendedDishController.text.trim(),
         'address': _addressController.text.trim(),
         'imageUrls': <String>[], // placeholder — updated after upload
-        'videoUrls': <String>[],
+        'videoUrls': _existingVideoUrls,
         'location': GeoPoint(
           _pickedLocation!.latitude,
           _pickedLocation!.longitude,
@@ -357,10 +437,12 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
       // Step 2: Upload images using the document ID as the storage folder
       final imageUrls = await _uploadImages(docRef.id);
+      final videoUrls = await _uploadVideos(docRef.id);
 
       // Step 3: Update the document with the real download URLs
       await docRef.update({
         'imageUrls': [..._existingImageUrls, ...imageUrls],
+        'videoUrls': [..._existingVideoUrls, ...videoUrls],
       });
 
       if (!_isEditing) {
@@ -541,6 +623,36 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                   labelText: 'Recommended Dish / Activity (optional)',
                   border: OutlineInputBorder(),
                   hintText: 'e.g. Try their koshary!',
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Video (optional)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              const SizedBox(height: 8),
+              if (_existingVideoUrls.isNotEmpty)
+                _VideoPickedTile(
+                  label: 'Uploaded video',
+                  onRemove: _isSaving
+                      ? null
+                      : () => setState(() => _existingVideoUrls.clear()),
+                ),
+              if (_selectedVideos.isNotEmpty)
+                _VideoPickedTile(
+                  label: _selectedVideos.first.name,
+                  onRemove: _isSaving
+                      ? null
+                      : () => setState(() => _selectedVideos.clear()),
+                ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _isSaving ? null : _pickVideo,
+                icon: const Icon(Icons.video_library_outlined),
+                label: Text(
+                  _selectedVideos.isEmpty && _existingVideoUrls.isEmpty
+                      ? 'Pick Video from Gallery'
+                      : 'Video selected',
                 ),
               ),
               const SizedBox(height: 20),

@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/home_provider.dart';
 import '../models/place.dart';
 import '../models/user_role.dart';
+import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/place_card.dart';
 import '../widgets/shimmer_loading.dart';
@@ -723,16 +724,69 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _NearbyCard extends StatelessWidget {
+class _NearbyCard extends StatefulWidget {
   final Place place;
   final VoidCallback onTap;
 
   const _NearbyCard({required this.place, required this.onTap});
 
   @override
+  State<_NearbyCard> createState() => _NearbyCardState();
+}
+
+class _NearbyCardState extends State<_NearbyCard> {
+  bool _isFavorite = false;
+  bool _isLoading = true;
+
+  Place get place => widget.place;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorite();
+  }
+
+  Future<void> _loadFavorite() async {
+    final saved = await FavoriteService.isFavorite(widget.place.id);
+    if (mounted) {
+      setState(() {
+        _isFavorite = saved;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isLoading) return;
+    final next = !_isFavorite;
+    setState(() => _isFavorite = next);
+    final result = await FavoriteService.togglePlace(
+      widget.place,
+      currentlySaved: !next,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.limitReached) {
+      setState(() => _isFavorite = false);
+      _snack('Saved-place limit reached.');
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFavorite = false);
+      _snack('Log in to save places.');
+    } else if (result == FavoriteResult.failed) {
+      setState(() => _isFavorite = !next);
+      _snack('Could not update saved place.');
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         width: 165,
         margin: const EdgeInsets.only(right: 14),
@@ -762,16 +816,23 @@ class _NearbyCard extends StatelessWidget {
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.favorite_border_rounded,
-                        color: AppTheme.dustyPink,
-                        size: 14,
+                    child: GestureDetector(
+                      onTap: _toggleFavorite,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isFavorite
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_border_rounded,
+                          color: _isFavorite
+                              ? AppTheme.primary
+                              : AppTheme.dustyPink,
+                          size: 14,
+                        ),
                       ),
                     ),
                   ),

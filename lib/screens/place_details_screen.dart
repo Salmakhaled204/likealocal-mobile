@@ -1,12 +1,15 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../models/place.dart';
 import '../models/user_role.dart';
+import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 import 'add_place_screen.dart';
 import 'chat_service.dart';
@@ -69,57 +72,79 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
   }
 
   Future<void> _toggleFavorite(Place place) async {
+    final nextValue = !_isFavorite;
+    if (mounted) setState(() => _isFavorite = nextValue);
+    final result = await FavoriteService.togglePlace(
+      place,
+      currentlySaved: !nextValue,
+    );
+    if (!mounted) return;
+    if (result == FavoriteResult.saved) {
+      _snack('Place saved.');
+    } else if (result == FavoriteResult.removed) {
+      _snack('Place removed from saved.');
+    } else if (result == FavoriteResult.limitReached) {
+      setState(() => _isFavorite = false);
+      _showPremiumDialog();
+    } else if (result == FavoriteResult.loginRequired) {
+      setState(() => _isFavorite = false);
+      _snack('Log in to save favorites.');
+    } else {
+      setState(() => _isFavorite = !nextValue);
+      _snack('Could not update favorite.');
+    }
+  }
+
+  Future<void> _toggleHelpfulReview(
+    String reviewId,
+    String reviewOwnerId,
+  ) async {
     final uid = _uid;
     if (uid == null) {
-      _snack('Log in to save favorites.');
+      _snack('Log in to mark reviews helpful.');
       return;
     }
-    final ref = FirebaseFirestore.instance
+    if (uid == reviewOwnerId) {
+      _snack('You cannot vote on your own review.');
+      return;
+    }
+
+    final reviewRef = FirebaseFirestore.instance
+        .collection('places')
+        .doc(_placeId)
+        .collection('reviews')
+        .doc(reviewId);
+    final voteRef = reviewRef.collection('helpfulVotes').doc(uid);
+    final userRef = FirebaseFirestore.instance
         .collection('users')
-        .doc(uid)
-        .collection('favorites')
-        .doc(_placeId);
-    final nextValue = !_isFavorite;
+        .doc(reviewOwnerId);
+
     try {
-      if (nextValue) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .get();
-        final role = UserRole.fromData(userDoc.data());
-        final current = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('favorites')
-            .limit(6)
-            .get();
-        if (current.docs.length >= role.maxPins) {
-          if (mounted) _showPremiumDialog();
-          return;
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final voteDoc = await tx.get(voteRef);
+        if (voteDoc.exists) {
+          tx.delete(voteRef);
+          tx.update(reviewRef, {'helpfulCount': FieldValue.increment(-1)});
+          tx.set(userRef, {
+            'stats': {'helpfulVotes': FieldValue.increment(-1)},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } else {
+          tx.set(voteRef, {
+            'userId': uid,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          tx.set(reviewRef, {
+            'helpfulCount': FieldValue.increment(1),
+          }, SetOptions(merge: true));
+          tx.set(userRef, {
+            'stats': {'helpfulVotes': FieldValue.increment(1)},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
         }
-        if (mounted) setState(() => _isFavorite = true);
-        await ref.set({
-          ...place.toFirestore(),
-          'placeId': _placeId,
-          'savedAt': FieldValue.serverTimestamp(),
-        });
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'limits': {'pinsUsed': FieldValue.increment(1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } else {
-        if (mounted) setState(() => _isFavorite = false);
-        await ref.delete();
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'limits': {'pinsUsed': FieldValue.increment(-1)},
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() => _isFavorite = !nextValue);
-        _snack('Could not update favorite.');
-      }
+      _snack('Could not update helpful vote.');
     }
   }
 
@@ -148,8 +173,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
         'userId': uid,
         'userEmail': user.email ?? '',
         'userName': user.displayName ?? '',
+        'placeId': _placeId,
         'text': text,
         'rating': _selectedRating,
+        if (_editingReviewId == null) 'helpfulCount': 0,
         'updatedAt': FieldValue.serverTimestamp(),
         if (_editingReviewId == null) 'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -314,7 +341,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     }
   }
 
-  Future<void> _deletePlace() async {
+  Future<void> _deletePlace(Place place) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -334,15 +361,68 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     );
     if (ok != true) return;
     try {
-      await FirebaseFirestore.instance
-          .collection('places')
-          .doc(_placeId)
-          .delete();
+      await _cleanupPlaceData(place);
       if (!mounted) return;
       Navigator.pop(context);
       _snack('Place deleted.');
     } catch (_) {
       _snack('Could not delete this place.');
+    }
+  }
+
+  Future<void> _cleanupPlaceData(Place place) async {
+    final db = FirebaseFirestore.instance;
+    final placeRef = db.collection('places').doc(_placeId);
+    final batch = db.batch();
+
+    final reviews = await placeRef.collection('reviews').get();
+    for (final review in reviews.docs) {
+      final votes = await review.reference.collection('helpfulVotes').get();
+      for (final vote in votes.docs) {
+        batch.delete(vote.reference);
+      }
+      batch.delete(review.reference);
+    }
+
+    final favorites = await db
+        .collectionGroup('favorites')
+        .where('placeId', isEqualTo: _placeId)
+        .get();
+    for (final favorite in favorites.docs) {
+      batch.delete(favorite.reference);
+      final userRef = favorite.reference.parent.parent;
+      if (userRef != null) {
+        batch.set(userRef, {
+          'limits': {'pinsUsed': FieldValue.increment(-1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    final reminders = await db
+        .collectionGroup('locationReminders')
+        .where('placeId', isEqualTo: _placeId)
+        .get();
+    for (final reminder in reminders.docs) {
+      batch.delete(reminder.reference);
+      final userRef = reminder.reference.parent.parent;
+      if (userRef != null) {
+        batch.set(userRef, {
+          'limits': {'remindersUsed': FieldValue.increment(-1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    batch.delete(placeRef);
+    await batch.commit();
+
+    for (final url in [...place.imageUrls, ...place.videoUrls]) {
+      try {
+        await FirebaseStorage.instance.refFromURL(url).delete();
+      } catch (_) {
+        // Ignore media cleanup failures so the Firestore delete still succeeds.
+      }
     }
   }
 
@@ -433,6 +513,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                       ),
                       const SizedBox(height: 24),
                       _buildLocalDetails(place),
+                      if (place.videoUrls.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Videos',
+                          child: _VideoGallery(videoUrls: place.videoUrls),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       _buildReviews(),
                     ],
@@ -771,7 +858,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                 label: role.isAdmin ? 'Admin delete' : 'Delete',
                 color: AppTheme.errorColor,
                 bg: const Color(0xFFFDECEC),
-                onTap: _deletePlace,
+                onTap: () => _deletePlace(place),
               ),
             ],
           ],
@@ -1051,8 +1138,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
             return Column(
               children: snapshot.data!.docs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                final isOwner = data['userId'] == _uid;
+                final reviewOwnerId = (data['userId'] as String?) ?? '';
+                final isOwner = reviewOwnerId == _uid;
                 final rating = (data['rating'] as num?)?.toInt() ?? 0;
+                final helpfulCount =
+                    (data['helpfulCount'] as num?)?.toInt() ?? 0;
                 final name = ((data['userName'] as String?) ?? '').trim();
                 final email = ((data['userEmail'] as String?) ?? '').trim();
                 final label = name.isNotEmpty
@@ -1185,6 +1275,16 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
                           height: 1.6,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      _HelpfulButton(
+                        placeId: _placeId,
+                        reviewId: doc.id,
+                        reviewOwnerId: reviewOwnerId,
+                        currentUserId: _uid,
+                        count: helpfulCount,
+                        onTap: () =>
+                            _toggleHelpfulReview(doc.id, reviewOwnerId),
+                      ),
                     ],
                   ),
                 );
@@ -1231,6 +1331,196 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
 }
 
 // ── Sub-widgets ──────────────────────────────────────────────────────────────
+
+class _HelpfulButton extends StatelessWidget {
+  final String placeId;
+  final String reviewId;
+  final String reviewOwnerId;
+  final String? currentUserId;
+  final int count;
+  final VoidCallback onTap;
+
+  const _HelpfulButton({
+    required this.placeId,
+    required this.reviewId,
+    required this.reviewOwnerId,
+    required this.currentUserId,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUserId == null || currentUserId == reviewOwnerId) {
+      return _HelpfulPill(isActive: false, count: count, onTap: null);
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('places')
+          .doc(placeId)
+          .collection('reviews')
+          .doc(reviewId)
+          .collection('helpfulVotes')
+          .doc(currentUserId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        return _HelpfulPill(
+          isActive: snapshot.data?.exists ?? false,
+          count: count,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+class _HelpfulPill extends StatelessWidget {
+  final bool isActive;
+  final int count;
+  final VoidCallback? onTap;
+
+  const _HelpfulPill({
+    required this.isActive,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? AppTheme.primaryLight : AppTheme.surfaceWarm,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: isActive ? AppTheme.primaryDim : AppTheme.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isActive
+                    ? Icons.thumb_up_alt_rounded
+                    : Icons.thumb_up_alt_outlined,
+                size: 14,
+                color: isActive ? AppTheme.primary : AppTheme.textLight,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '$count helpful',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: isActive ? AppTheme.primary : AppTheme.textMid,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoGallery extends StatelessWidget {
+  final List<String> videoUrls;
+
+  const _VideoGallery({required this.videoUrls});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: videoUrls
+          .map(
+            (url) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _VideoPlayerCard(url: url),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _VideoPlayerCard extends StatefulWidget {
+  final String url;
+
+  const _VideoPlayerCard({required this.url});
+
+  @override
+  State<_VideoPlayerCard> createState() => _VideoPlayerCardState();
+}
+
+class _VideoPlayerCardState extends State<_VideoPlayerCard> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: _ready ? _controller.value.aspectRatio : 16 / 9,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(color: AppTheme.surfaceWarm),
+            if (_ready)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _controller.value.isPlaying
+                        ? _controller.pause()
+                        : _controller.play();
+                  });
+                },
+                child: VideoPlayer(_controller),
+              )
+            else
+              const CircularProgressIndicator(color: AppTheme.primary),
+            if (_ready && !_controller.value.isPlaying)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  shape: BoxShape.circle,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _Section extends StatelessWidget {
   final String title;
