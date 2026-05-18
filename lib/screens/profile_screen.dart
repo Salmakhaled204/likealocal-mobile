@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../models/user_role.dart';
 import '../providers/search_provider.dart';
+import 'chat_list_screen.dart';
 
 /// lib/screens/profile_screen.dart
 class ProfileScreen extends StatefulWidget {
@@ -471,6 +472,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 24),
 
+                    // Messages shortcut
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ChatListScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.chat_bubble_outline_rounded,
+                                color: Colors.blueAccent, size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                'My Messages',
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: Colors.grey, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    if (_userRole.isAdmin) ...[
+                      GestureDetector(
+                        onTap: () => Navigator.pushNamed(context, '/admin/reports'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.admin_panel_settings_outlined,
+                                  color: Colors.deepPurple, size: 22),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  'Moderation Reports',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded,
+                                  color: Colors.grey, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
                     // Settings
                     Text(
                       'Settings',
@@ -480,6 +549,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/settings'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.settings_outlined,
+                                color: Colors.blueGrey, size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                'Open Settings',
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: Colors.grey, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -777,8 +876,12 @@ class _RoleSummary extends StatelessWidget {
 
 class _RoleActions extends StatelessWidget {
   final UserRole role;
+  final VoidCallback onBecomeContributor;
 
-  const _RoleActions({required this.role});
+  const _RoleActions({
+    required this.role,
+    required this.onBecomeContributor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -790,13 +893,14 @@ class _RoleActions extends StatelessWidget {
             'Contributor access is reviewed by an admin before place uploads are enabled.',
             style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
           ),
-        if (!role.isPremium) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Premium access is assigned securely and cannot be activated inside the app.',
-            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+        if (!role.isPremium)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Premium is assigned through Firebase/admin setup, not by a client-side demo toggle.',
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+            ),
           ),
-        ],
         if (role.isAdmin)
           Padding(
             padding: const EdgeInsets.only(top: 8),
