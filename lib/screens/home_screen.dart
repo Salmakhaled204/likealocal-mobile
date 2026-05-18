@@ -52,6 +52,44 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _checkAndPromoteSuperUser(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!doc.exists) return;
+      final role = UserRole.fromData(doc.data());
+      if (role.isContributor && role.qualifiesForSuperUser) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).set(
+          {'role': AppUserRole.superUser, 'isSuperUser': true, 'updatedAt': FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.workspace_premium_rounded, color: AppTheme.amber, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text('🎉 You\'ve been promoted to Super User!', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white))),
+            ]),
+            duration: const Duration(seconds: 4),
+          ));
+        }
+      }
+    } catch (_) {}
+=========
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<HomeProvider>().fetchPlaces();
+    });
+  }
+
+  void _openPlace(Place place) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => PlaceDetailsScreen(place: place)));
+>>>>>>>>> Temporary merge branch 2
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(AppTheme.overlayLight);
@@ -118,18 +156,109 @@ class _HomeScreenState extends State<HomeScreen> {
           'Only Contributors, Super Users, and Admins can add places.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _currentIndex = 3);
-            },
-            child: const Text('View profile'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          TextButton(onPressed: () { Navigator.pop(ctx); setState(() => _currentIndex = 3); }, child: const Text('View profile')),
         ],
+=========
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: SafeArea(
+        child: Consumer<HomeProvider>(
+          builder: (context, provider, _) {
+            final places = provider.places;
+            final recommendations = provider.recommendations;
+
+            return RefreshIndicator(
+              color: AppTheme.primary,
+              onRefresh: provider.fetchPlaces,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                      child: _Header(
+                        onSearchTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SearchScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  if (provider.isLoading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (provider.errorMessage != null)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _MessageState(
+                        icon: Icons.wifi_off_rounded,
+                        message: provider.errorMessage!,
+                      ),
+                    )
+                  else if (places.isEmpty)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _MessageState(
+                        icon: Icons.explore_off_rounded,
+                        message: 'No places yet. Check back soon.',
+                      ),
+                    )
+                  else ...[
+                    if (recommendations.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: _SectionTitle(
+                          title: provider.isPersonalized
+                              ? 'For you'
+                              : 'Local favorites',
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: 235,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.only(left: 20),
+                            scrollDirection: Axis.horizontal,
+                            itemCount: recommendations.length,
+                            itemBuilder: (context, index) {
+                              final place = recommendations[index];
+                              return _NearbyCard(
+                                place: place,
+                                onTap: () => _openPlace(place),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SliverToBoxAdapter(
+                      child: _SectionTitle(title: 'Explore nearby'),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      sliver: SliverList.builder(
+                        itemCount: places.length,
+                        itemBuilder: (context, index) {
+                          final place = places[index];
+                          return PlaceCard(
+                            place: place,
+                            onTap: () => _openPlace(place),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+>>>>>>>>> Temporary merge branch 2
       ),
     );
   }
@@ -368,43 +497,65 @@ class _BottomBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'Home',
-                index: 0,
-                current: currentIndex,
-                onTap: onTap,
-              ),
-              _NavItem(
-                icon: Icons.search_outlined,
-                activeIcon: Icons.search_rounded,
-                label: 'Search',
-                index: 1,
-                current: currentIndex,
-                onTap: onTap,
-              ),
+              _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home', index: 0, current: currentIndex, onTap: onTap),
+              _NavItem(icon: Icons.search_outlined, activeIcon: Icons.search_rounded, label: 'Search', index: 1, current: currentIndex, onTap: onTap),
               const SizedBox(width: 60),
-              _NavItem(
-                icon: Icons.favorite_outline_rounded,
-                activeIcon: Icons.favorite_rounded,
-                label: 'Saved',
-                index: 2,
-                current: currentIndex,
-                onTap: onTap,
-              ),
-              _NavItem(
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'Profile',
-                index: 3,
-                current: currentIndex,
-                onTap: onTap,
-              ),
+              _NavItem(icon: Icons.favorite_outline_rounded, activeIcon: Icons.favorite_rounded, label: 'Saved', index: 2, current: currentIndex, onTap: onTap),
+              _NavItem(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Profile', index: 3, current: currentIndex, onTap: onTap),
             ],
+=========
+class _Header extends StatelessWidget {
+  final VoidCallback onSearchTap;
+
+  const _Header({required this.onSearchTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'LikeALocal',
+          style: GoogleFonts.poppins(
+            color: AppTheme.textDark,
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
           ),
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          'Find places locals actually love.',
+          style: GoogleFonts.poppins(color: AppTheme.textLight, fontSize: 14),
+        ),
+        const SizedBox(height: 18),
+        InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onSearchTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.softShadow,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search_rounded, color: AppTheme.textLight),
+                const SizedBox(width: 10),
+                Text(
+                  'Search cafes, gems, food spots',
+                  style: GoogleFonts.poppins(
+                    color: AppTheme.textLight,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+>>>>>>>>> Temporary merge branch 2
+          ),
+        ),
+      ],
     );
   }
 }
@@ -434,20 +585,22 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              active ? activeIcon : icon,
-              color: active ? AppTheme.primary : AppTheme.textLight,
-              size: 24,
-            ),
+<<<<<<<<< Temporary merge branch 1
+            Icon(active ? activeIcon : icon, color: active ? AppTheme.primary : AppTheme.textLight, size: 24),
             const SizedBox(height: 3),
+            Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: active ? FontWeight.w700 : FontWeight.w400, color: active ? AppTheme.primary : AppTheme.textLight)),
+=========
+            Icon(icon, color: AppTheme.textLight, size: 38),
+            const SizedBox(height: 12),
             Text(
-              label,
+              message,
+              textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 10,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                color: active ? AppTheme.primary : AppTheme.textLight,
+                color: AppTheme.textLight,
+                fontSize: 14,
               ),
             ),
+>>>>>>>>> Temporary merge branch 2
           ],
         ),
       ),
@@ -1086,85 +1239,69 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
             // Image with bookmark overlay
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Image
-                    place.imageUrls.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: place.imageUrls.first,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) =>
-                                Container(color: AppTheme.surfaceWarm),
-                            errorWidget: (context, url, error) =>
-                                _imgFallback(),
-                          )
-                        : _imgFallback(),
-                    // Gradient
-                    const DecoratedBox(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                child: Stack(fit: StackFit.expand, children: [
+                  // Image
+                  place.imageUrls.isNotEmpty
+<<<<<<<<< Temporary merge branch 1
+                      ? CachedNetworkImage(imageUrl: place.imageUrls.first, fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: AppTheme.surfaceWarm),
+                          errorWidget: (_, __, ___) => _imgFallback())
+                      : _imgFallback(),
+                  // Gradient
+                  const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
+                    colors: [Colors.transparent, Color(0x881A2B2A)],
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    stops: [0.5, 1.0],
+                  ))),
+                  // Bookmark button top-right
+                  Positioned(top: 8, right: 8, child: GestureDetector(
+                    onTap: _toggle,
+                    child: Container(
+                      width: 30, height: 30,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.transparent, Color(0x881A2B2A)],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          stops: [0.5, 1.0],
+                        color: _isFav ? AppTheme.peach : Colors.white.withValues(alpha: 0.9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(_isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: _isFav ? Colors.white : AppTheme.peach, size: 16),
+=========
+                      ? Image.network(
+                          place.imageUrls.first,
+                          height: 125,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, err, st) => _imgPlaceholder(),
+                        )
+                      : _imgPlaceholder(),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.bookmark_border_rounded,
+                          color: AppTheme.dustyPink,
+                          size: 14,
                         ),
                       ),
+>>>>>>>>> Temporary merge branch 2
                     ),
-                    // Bookmark button top-right
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: _toggle,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: _isFav
-                                ? AppTheme.peach
-                                : Colors.white.withValues(alpha: 0.9),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isFav
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            color: _isFav ? Colors.white : AppTheme.peach,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Super user badge top-left
-                    if (place.ownerIsSuperUser)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.accent,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'Top',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                  )),
+                  // Super user badge top-left
+                  if (place.ownerIsSuperUser)
+                    Positioned(top: 8, left: 8, child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(color: AppTheme.accent, borderRadius: BorderRadius.circular(20)),
+                      child: Text('Top', style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
+                    )),
+                ]),
               ),
             ),
             // Info section
@@ -1180,81 +1317,58 @@ class _GridPlaceCardState extends State<_GridPlaceCard> {
                       fontWeight: FontWeight.w700,
                       color: AppTheme.textDark,
                     ),
+<<<<<<<<< Temporary merge branch 1
+                ]),
+              ]),
+=========
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on_rounded,
-                        size: 11,
-                        color: AppTheme.textLight,
-                      ),
-                      const SizedBox(width: 2),
-                      Expanded(
-                        child: Text(
-                          place.address.isNotEmpty
-                              ? place.address
-                              : place.category,
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppTheme.textLight,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    place.address.isNotEmpty ? place.address : place.category,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: AppTheme.textLight,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      // Stars
-                      ...List.generate(
-                        5,
-                        (i) => Icon(
-                          i < place.averageRating.round()
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          color: AppTheme.amber,
-                          size: 13,
-                        ),
+                      const Icon(
+                        Icons.star_rounded,
+                        color: AppTheme.amber,
+                        size: 13,
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 3),
                       Text(
                         place.averageRating.toStringAsFixed(1),
                         style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppTheme.textMid,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
                         ),
                       ),
-                      const Spacer(),
-                      // Budget badge — matches the teal price pill in reference
-                      if (place.budget.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      if (place.budget.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Expanded(
                           child: Text(
-                            place.budget,
+                            '- ${place.budget}',
                             style: GoogleFonts.poppins(
-                              fontSize: 9,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              color: AppTheme.textLight,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ],
               ),
+>>>>>>>>> Temporary merge branch 2
             ),
           ],
         ),

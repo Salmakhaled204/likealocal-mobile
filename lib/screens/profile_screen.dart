@@ -905,8 +905,17 @@ class _RoleSummary extends StatelessWidget {
 
 class _RoleActions extends StatelessWidget {
   final UserRole role;
+<<<<<<<<< Temporary merge branch 1
+  final VoidCallback onBecomeContributor;
+
+  const _RoleActions({
+    required this.role,
+    required this.onBecomeContributor,
+  });
+=========
 
   const _RoleActions({required this.role});
+>>>>>>>>> Temporary merge branch 2
 
   @override
   Widget build(BuildContext context) {

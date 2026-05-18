@@ -48,9 +48,21 @@ class NotificationService {
     await androidImpl?.requestNotificationsPermission();
 
     // ── 2. Initialise plugin with local-notification tap handler ─────────────
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+=========
+  static Future<void> initialize() async {
+    // ── 1. Local notifications plugin setup (for foreground messages) ──────
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(_channel);
+
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
+>>>>>>>>> Temporary merge branch 2
     const iosSettings = DarwinInitializationSettings();
     await _localNotifications.initialize(
       const InitializationSettings(android: androidSettings, iOS: iosSettings),
@@ -245,10 +257,21 @@ class NotificationService {
         });
   }
 
+<<<<<<<<< Temporary merge branch 1
   static Future<void> syncTokenForCurrentUser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'fcmToken': token,
+      });
+=========
+  static Future<void> _saveToken() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
@@ -262,15 +285,26 @@ class NotificationService {
   }
 
   static Future<void> _updateToken(String token) async {
+<<<<<<<<< Temporary merge branch 1
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'fcmToken': token,
+      });
+    } catch (e) {
+      if (kDebugMode) print('Could not refresh FCM token: $e');
+=========
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'fcmToken': token,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      if (kDebugMode) print('Could not refresh FCM token: $e');
+      if (kDebugMode) print('Could not update FCM token: $e');
+>>>>>>>>> Temporary merge branch 2
     }
   }
 }

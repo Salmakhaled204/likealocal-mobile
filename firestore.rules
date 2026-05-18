@@ -269,6 +269,43 @@ service cloud.firestore {
         && isOptionalString(request.resource.data.senderName, 120)
         && isNonEmptyString(request.resource.data.text, 500)
         && request.resource.data.timestamp is timestamp;
+>>>>>>>>> Temporary merge branch 2
+    }
+
+    function ownsReview() {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    function createsOwnReview(reviewId) {
+      return isSignedIn()
+        && request.auth.uid == reviewId
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    function updatesHelpfulCountOnly() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['helpfulCount']);
+    }
+
+    function updatesHelpfulStatOnly() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stats', 'updatedAt'])
+        && request.resource.data.stats.totalContributions
+          == resource.data.stats.totalContributions
+        && request.resource.data.stats.totalReviews
+          == resource.data.stats.totalReviews
+        && request.resource.data.stats.averageRating
+          == resource.data.stats.averageRating
+        && request.resource.data.stats.reportCount
+          == resource.data.stats.reportCount
+        && (
+          request.resource.data.stats.helpfulVotes
+            == resource.data.stats.helpfulVotes + 1
+          || request.resource.data.stats.helpfulVotes
+            == resource.data.stats.helpfulVotes - 1
+        );
     }
 
     match /users/{userId} {
@@ -277,7 +314,13 @@ service cloud.firestore {
         && request.resource.data.role == 'regular'
         && request.resource.data.subscription == 'free';
       allow read: if isOwner(userId) || isAdmin();
+<<<<<<<<< Temporary merge branch 1
+      allow update: if safeUserUpdate(userId)
+        || updatesHelpfulStatOnly()
+        || isAdmin();
+=========
       allow update: if safeUserUpdate(userId) || isAdmin();
+>>>>>>>>> Temporary merge branch 2
       allow delete: if isAdmin();
 
       match /favorites/{placeId} {
@@ -301,10 +344,9 @@ service cloud.firestore {
 
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if validReviewCreate(reviewId);
-        allow update: if validReviewUpdate()
-          || updatesHelpfulCountOnly()
-          || isAdmin();
+<<<<<<<<< Temporary merge branch 1
+        allow create: if createsOwnReview(reviewId);
+        allow update: if ownsReview() || isAdmin() || updatesHelpfulCountOnly();
         allow delete: if ownsReview() || isAdmin();
 
         match /helpfulVotes/{userId} {

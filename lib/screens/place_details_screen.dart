@@ -50,46 +50,68 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
   Future<void> _checkFavorite() async {
     final uid = _uid;
-    if (uid == null) {
-      setState(() => _isFavoriteLoading = false);
-      return;
-    }
+    if (uid == null) { setState(() => _isFavoriteLoading = false); return; }
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('favorites')
-          .doc(_placeId)
-          .get();
-      if (mounted) {
-        setState(() {
-          _isFavorite = doc.exists;
-          _isFavoriteLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isFavoriteLoading = false);
-    }
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).collection('favorites').doc(_placeId).get();
+      if (mounted) setState(() { _isFavorite = doc.exists; _isFavoriteLoading = false; });
+    } catch (_) { if (mounted) setState(() => _isFavoriteLoading = false); }
   }
 
   Future<void> _toggleFavorite(Place place) async {
+<<<<<<<<< Temporary merge branch 1
     final next = !_isFavorite;
     if (mounted) setState(() => _isFavorite = next);
-    final result = await FavoriteService.togglePlace(
-      place,
-      currentlySaved: !next,
-    );
+    final result = await FavoriteService.togglePlace(place, currentlySaved: !next);
     if (!mounted) return;
-    if (result == FavoriteResult.limitReached) {
-      setState(() => _isFavorite = false);
-      _showPremiumDialog();
-    } else if (result == FavoriteResult.loginRequired) {
-      setState(() => _isFavorite = false);
-      _snack('Log in to save.');
-    } else if (result == FavoriteResult.failed) {
-      setState(() => _isFavorite = !next);
-      _snack('Could not update.');
+    if (result == FavoriteResult.limitReached) { setState(() => _isFavorite = false); _showPremiumDialog(); }
+    else if (result == FavoriteResult.loginRequired) { setState(() => _isFavorite = false); _snack('Log in to save.'); }
+    else if (result == FavoriteResult.failed) { setState(() => _isFavorite = !next); _snack('Could not update.'); }
+=========
+    final uid = _uid;
+    if (uid == null) {
+      _snack('Log in to save favorites.');
+      return;
     }
+    final ref = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('favorites')
+        .doc(_placeId);
+    final nextValue = !_isFavorite;
+    try {
+      if (nextValue) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        final role = UserRole.fromData(userDoc.data());
+        final current = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('favorites')
+            .limit(6)
+            .get();
+        if (current.docs.length >= role.maxPins) {
+          if (mounted) _showPremiumDialog();
+          return;
+        }
+        if (mounted) setState(() => _isFavorite = true);
+        await ref.set({
+          ...place.toFirestore(),
+          'placeId': _placeId,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        if (mounted) setState(() => _isFavorite = false);
+        await ref.delete();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isFavorite = !nextValue);
+        _snack('Could not update favorite.');
+      }
+    }
+>>>>>>>>> Temporary merge branch 2
   }
 
   Future<void> _toggleHelpfulReview(
@@ -145,6 +167,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     }
     setState(() => _isSubmittingReview = true);
     try {
+<<<<<<<<< Temporary merge branch 1
+      final user = FirebaseAuth.instance.currentUser!;
+      final ref = FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(_editingReviewId ?? uid);
+=========
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         _snack('Log in to leave a review.');
@@ -155,6 +181,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           .doc(_placeId)
           .collection('reviews')
           .doc(_editingReviewId ?? uid);
+>>>>>>>>> Temporary merge branch 2
       await ref.set({
         'userId': uid,
         'userEmail': user.email ?? '',
@@ -258,23 +285,45 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         .limit(role.maxReminders + 1)
         .get();
     final alreadySaved = reminders.docs.any((d) => d.id == place.id);
-    if (!alreadySaved && reminders.docs.length >= role.maxReminders) {
-      _snack('Reminder limit reached.');
-      return;
+    if (!alreadySaved && reminders.docs.length >= role.maxReminders) { _snack('Reminder limit reached.'); return; }
+    await FirebaseFirestore.instance.collection('users').doc(uid).collection('locationReminders').doc(place.id).set({
+      'placeId': place.id, 'title': place.title, 'location': place.location, 'enabled': true, 'radiusMeters': 300, 'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (!alreadySaved) {
+<<<<<<<<< Temporary merge branch 1
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({'limits': {'remindersUsed': FieldValue.increment(1)}, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+=========
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     }
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('locationReminders')
-        .doc(place.id)
-        .set({
-          'placeId': place.id,
-          'title': place.title,
-          'location': place.location,
-          'enabled': true,
-          'radiusMeters': 300,
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        _snack('Reminder saved. Enable location for alerts.');
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      final dist = Geolocator.distanceBetween(
+        pos.latitude,
+        pos.longitude,
+        lat,
+        lng,
+      );
+      _snack(
+        dist <= 300
+            ? 'Reminder saved. You\'re already nearby!'
+            : 'Reminder saved!',
+      );
+    } catch (_) {
+      _snack('Reminder saved.');
+>>>>>>>>> Temporary merge branch 2
+    }
     _snack('Reminder saved!');
   }
 
