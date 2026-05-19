@@ -280,10 +280,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
                     _RoleSummary(role: _userRole),
                     const SizedBox(height: 12),
-                    _RoleActions(
-  role: _userRole,
-  onBecomeContributor: () {},
-),
+                    _RoleActions(role: _userRole),
+                    if (_userRole.isContributor) ...[
+                      const SizedBox(height: 12),
+                      _SuperUserProgressCard(role: _userRole),
+                    ],
                     const SizedBox(height: 28),
 
                     // Display Name
@@ -854,7 +855,7 @@ class _RoleSummary extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Pins ${role.limits.pinsUsed}/${role.maxPins} | Reminders ${role.limits.remindersUsed}/${role.maxReminders} | AI/day ${role.maxAiRequestsPerDay}',
+                  'Favorites ${role.limits.pinsUsed}/${role.maxFavorites} | Places/mo ${role.maxPlacesPerMonth} | Reviews/day ${role.maxReviewsPerDay} | AI/day ${role.maxAiRequestsPerDay}',
                   style: GoogleFonts.inter(
                     color: Colors.grey[600],
                     fontSize: 11,
@@ -879,12 +880,8 @@ class _RoleSummary extends StatelessWidget {
 
 class _RoleActions extends StatelessWidget {
   final UserRole role;
-  final VoidCallback onBecomeContributor;
 
-  const _RoleActions({
-    required this.role,
-    required this.onBecomeContributor,
-  });
+  const _RoleActions({required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -893,15 +890,25 @@ class _RoleActions extends StatelessWidget {
       children: [
         if (role.isRegular)
           Text(
-            'Contributor access is reviewed by an admin before place uploads are enabled.',
+            'Post your first place and become a Contributor!',
             style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
           ),
         if (!role.isPremium)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Premium is assigned through Firebase/admin setup, not by a client-side demo toggle.',
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/premium'),
+              icon: const Icon(Icons.diamond_outlined),
+              label: const Text('Unlock the full LikeALocal experience'),
+            ),
+          ),
+        if (role.isPremium)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/premium'),
+              icon: const Icon(Icons.workspace_premium_outlined),
+              label: const Text('Manage Demo Premium'),
             ),
           ),
         if (role.isAdmin)
@@ -913,6 +920,60 @@ class _RoleActions extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _SuperUserProgressCard extends StatelessWidget {
+  final UserRole role;
+
+  const _SuperUserProgressCard({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = role.stats.approvedContributions;
+    final rejected = role.stats.rejectedContributions;
+    final status = approved >= 10 && rejected <= 2
+        ? 'Status: Super User ready!'
+        : rejected > 2
+        ? 'Status: Focus on quality posts.'
+        : 'Status: Keep going!';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'WANT TO BECOME A SUPER USER?',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              color: Colors.amber[900],
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Share quality places, get approvals, and build your local reputation.',
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[700]),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Super User Progress:',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          Text('Approved places: $approved / 10'),
+          Text('Rejected posts: $rejected / 2'),
+          Text(status),
+        ],
+      ),
     );
   }
 }

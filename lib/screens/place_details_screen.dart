@@ -15,6 +15,7 @@ import '../services/favorite_service.dart';
 import '../theme/app_theme.dart';
 import 'add_place_screen.dart';
 import 'chat_service.dart';
+import 'public_profile_screen.dart';
 
 class PlaceDetailsScreen extends StatefulWidget {
   final Place place;
@@ -96,6 +97,16 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     setState(() => _isSubmittingReview = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
+      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+      final userDoc = await userRef.get();
+      final role = UserRole.fromData(userDoc.data());
+      if (_editingReviewId == null &&
+          role.limits.reviewsToday >= role.maxReviewsPerDay) {
+        _snack(
+          'Daily review limit reached (${role.maxReviewsPerDay}). Premium unlocks more review activity.',
+        );
+        return;
+      }
       final ref = FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(_editingReviewId ?? uid);
       await ref.set({
         'userId': uid, 'userEmail': user.email ?? '', 'userName': user.displayName ?? '',
@@ -104,6 +115,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         'updatedAt': FieldValue.serverTimestamp(),
         if (_editingReviewId == null) 'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      if (_editingReviewId == null) {
+        await userRef.set({
+          'limits': {'reviewsToday': FieldValue.increment(1)},
+          'stats': {'totalReviews': FieldValue.increment(1)},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
       await _recalcRating();
       _reviewCtrl.clear();
       setState(() { _editingReviewId = null; _selectedRating = 5; });
@@ -127,6 +145,126 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       await FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').doc(id).delete();
       await _recalcRating();
     }
+  }
+
+  Future<void> _reportPlace(Place place) async {
+    final uid = _uid;
+    if (uid == null) { _snack('Log in to report.'); return; }
+    if (uid == place.ownerId) { _snack('You cannot report your own place.'); return; }
+    final report = await _showReportDialog(title: 'Report this place');
+    if (report == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('places')
+          .doc(_placeId)
+          .collection('reports')
+          .add({
+        'type': 'place',
+        'status': 'open',
+        'placeId': _placeId,
+        'placeTitle': place.title,
+        'targetOwnerId': place.ownerId,
+        'reporterId': uid,
+        'reporterEmail': FirebaseAuth.instance.currentUser?.email ?? '',
+        'reason': report.reason,
+        'details': report.details,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      _snack('Report sent to admin moderation.');
+    } catch (_) {
+      _snack('Could not send report.');
+    }
+  }
+
+  Future<void> _reportReview({
+    required String reviewId,
+    required Map<String, dynamic> data,
+  }) async {
+    final uid = _uid;
+    if (uid == null) { _snack('Log in to report.'); return; }
+    final reviewOwnerId = (data['userId'] ?? '').toString();
+    if (uid == reviewOwnerId) { _snack('You cannot report your own review.'); return; }
+    final report = await _showReportDialog(title: 'Report this review');
+    if (report == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('places')
+          .doc(_placeId)
+          .collection('reviews')
+          .doc(reviewId)
+          .collection('reports')
+          .add({
+        'type': 'review',
+        'status': 'open',
+        'placeId': _placeId,
+        'reviewId': reviewId,
+        'placeTitle': widget.place.title,
+        'targetOwnerId': reviewOwnerId,
+        'reportedText': (data['text'] ?? '').toString(),
+        'reporterId': uid,
+        'reporterEmail': FirebaseAuth.instance.currentUser?.email ?? '',
+        'reason': report.reason,
+        'details': report.details,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      _snack('Review report sent to admin moderation.');
+    } catch (_) {
+      _snack('Could not send report.');
+    }
+  }
+
+  Future<_ReportInput?> _showReportDialog({required String title}) async {
+    final detailsCtrl = TextEditingController();
+    var reason = 'Inappropriate content';
+    final result = await showDialog<_ReportInput>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: reason,
+                decoration: const InputDecoration(labelText: 'Reason'),
+                items: const [
+                  'Inappropriate content',
+                  'Fake or misleading',
+                  'Spam',
+                  'Harassment',
+                  'Wrong information',
+                  'Other',
+                ].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                onChanged: (value) => setDialogState(() => reason = value ?? reason),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailsCtrl,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Details',
+                  hintText: 'Tell the admin what is wrong',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                _ReportInput(reason: reason, details: detailsCtrl.text.trim()),
+              ),
+              child: const Text('Send report'),
+            ),
+          ],
+        ),
+      ),
+    );
+    detailsCtrl.dispose();
+    return result;
   }
 
   Future<void> _recalcRating() async {
@@ -213,6 +351,22 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     _reviewCtrl.clear();
   }
 
+  void _openPublicProfile(String userId, String fallbackName) {
+    if (userId.isEmpty) {
+      _snack('Profile unavailable.');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(
+          userId: userId,
+          fallbackName: fallbackName,
+        ),
+      ),
+    );
+  }
+
   void _snack(String msg) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
   String _fmtDate(dynamic v) { if (v is! Timestamp) return ''; final d = v.toDate(); return '${d.day}/${d.month}/${d.year}'; }
 
@@ -287,7 +441,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
-            onTap: () => _openDirections(widget.place),
+            onTap: () => _openDirections(place),
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
@@ -296,9 +450,20 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           ),
         ),
         Padding(
+          padding: const EdgeInsets.all(8),
+          child: GestureDetector(
+            onTap: () => _reportPlace(place),
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+              child: const Icon(Icons.flag_outlined, color: Colors.white, size: 20),
+            ),
+          ),
+        ),
+        Padding(
           padding: const EdgeInsets.fromLTRB(0, 8, 12, 8),
           child: GestureDetector(
-            onTap: () => _toggleFavorite(widget.place),
+            onTap: () => _toggleFavorite(place),
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
@@ -324,30 +489,30 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const DecoratedBox(decoration: BoxDecoration(gradient: AppTheme.heroGradient)),
           // Title + location at bottom
           Positioned(left: 18, right: 18, bottom: 60, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(widget.place.title, style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white, height: 1.15)),
-            if (widget.place.address.isNotEmpty) ...[
+            Text(place.title, style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white, height: 1.15)),
+            if (place.address.isNotEmpty) ...[
               const SizedBox(height: 4),
               Row(children: [
                 Icon(Icons.location_on_rounded, size: 14, color: Colors.white70),
                 const SizedBox(width: 4),
-                Expanded(child: Text(widget.place.address, style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                Expanded(child: Text(place.address, style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis)),
               ]),
             ],
             const SizedBox(height: 8),
             // Rating row
             Row(children: [
               ...List.generate(5, (i) => Icon(
-                i < widget.place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded,
+                i < place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded,
                 color: AppTheme.amber, size: 17,
               )),
               const SizedBox(width: 6),
-              Text('${widget.place.averageRating.toStringAsFixed(1)}/5', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+              Text('${place.averageRating.toStringAsFixed(1)}/5', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
             ]),
           ])),
           // Thumbnail strip bottom-right (like reference)
-          if (widget.place.imageUrls.length > 1)
+          if (place.imageUrls.length > 1)
             Positioned(right: 14, bottom: 56, child: Row(children: [
-              ...widget.place.imageUrls.take(3).map((url) => Container(
+              ...place.imageUrls.take(3).map((url) => Container(
                 width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
@@ -355,11 +520,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                   image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
                 ),
               )),
-              if (widget.place.imageUrls.length > 3)
+              if (place.imageUrls.length > 3)
                 Container(
                   width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.black54, border: Border.all(color: Colors.white, width: 1.5)),
-                  child: Center(child: Text('+${widget.place.imageUrls.length - 3}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold))),
+                  child: Center(child: Text('+${place.imageUrls.length - 3}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold))),
                 ),
             ])),
         ]),
@@ -482,34 +647,46 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
       child: Row(children: [
-        Container(
-          width: 44, height: 44,
-          decoration: BoxDecoration(gradient: AppTheme.primaryGradient, shape: BoxShape.circle),
-          child: Center(child: Text(place.ownerName.isNotEmpty ? place.ownerName[0].toUpperCase() : '?',
-              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+        GestureDetector(
+          onTap: () => _openPublicProfile(place.ownerId, place.ownerName),
+          child: Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(gradient: AppTheme.primaryGradient, shape: BoxShape.circle),
+            child: Center(child: Text(place.ownerName.isNotEmpty ? place.ownerName[0].toUpperCase() : '?',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+          ),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Text(place.ownerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
-            if (place.ownerIsSuperUser) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.workspace_premium_rounded, size: 11, color: AppTheme.primary),
-                  const SizedBox(width: 3),
-                  Text('Super User', style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
-                ]),
-              ),
-            ],
+        Expanded(child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _openPublicProfile(place.ownerId, place.ownerName),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(place.ownerName, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textDark), overflow: TextOverflow.ellipsis)),
+              if (place.ownerIsSuperUser) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.workspace_premium_rounded, size: 11, color: AppTheme.primary),
+                    const SizedBox(width: 3),
+                    Text('Super User', style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ],
+            ]),
+            Text('View profile', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
           ]),
-          Text('Place contributor', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textLight)),
-        ])),
+        )),
         if (place.ownerId.isNotEmpty && place.ownerId != _uid)
           GestureDetector(
-            onTap: () => ChatService.startChat(context, place.ownerId, otherUserName: place.ownerName),
+            onTap: () => ChatService.startChat(
+              context,
+              place.ownerId,
+              otherUserName: place.ownerName,
+              placeId: place.id,
+            ),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.primaryDim)),
@@ -592,25 +769,44 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Container(
-                    width: 38, height: 38,
-                    decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
-                    child: Center(child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
-                        style: GoogleFonts.poppins(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.bold))),
+                  GestureDetector(
+                    onTap: () => _openPublicProfile(reviewOwnerId, label),
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
+                      child: Center(child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
+                          style: GoogleFonts.poppins(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.bold))),
+                    ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                    Row(children: [
-                      ...List.generate(5, (i) => Icon(i < rating ? Icons.star_rounded : Icons.star_outline_rounded, color: AppTheme.amber, size: 13)),
-                      if (date.isNotEmpty) ...[const SizedBox(width: 8), Text(date, style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight))],
+                  Expanded(child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openPublicProfile(reviewOwnerId, label),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                      Row(children: [
+                        ...List.generate(5, (i) => Icon(i < rating ? Icons.star_rounded : Icons.star_outline_rounded, color: AppTheme.amber, size: 13)),
+                        if (date.isNotEmpty) ...[const SizedBox(width: 8), Text(date, style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight))],
+                      ]),
                     ]),
-                  ])),
-                  if (isOwner) PopupMenuButton<String>(
-                    onSelected: (v) => v == 'edit' ? _startEditing(doc.id, data['text'] ?? '', rating) : _confirmDeleteReview(doc.id),
+                  )),
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'edit') {
+                        _startEditing(doc.id, data['text'] ?? '', rating);
+                      } else if (v == 'delete') {
+                        _confirmDeleteReview(doc.id);
+                      } else if (v == 'report') {
+                        _reportReview(reviewId: doc.id, data: data);
+                      }
+                    },
                     itemBuilder: (ctx) => [
-                      PopupMenuItem(value: 'edit', child: Text('Edit', style: GoogleFonts.poppins(color: AppTheme.textDark))),
-                      PopupMenuItem(value: 'delete', child: Text('Delete', style: GoogleFonts.poppins(color: AppTheme.errorColor))),
+                      if (isOwner)
+                        PopupMenuItem(value: 'edit', child: Text('Edit', style: GoogleFonts.poppins(color: AppTheme.textDark))),
+                      if (isOwner)
+                        PopupMenuItem(value: 'delete', child: Text('Delete', style: GoogleFonts.poppins(color: AppTheme.errorColor))),
+                      if (!isOwner)
+                        PopupMenuItem(value: 'report', child: Text('Report', style: GoogleFonts.poppins(color: AppTheme.errorColor))),
                     ],
                     child: Icon(Icons.more_vert_rounded, size: 18, color: AppTheme.textLight),
                   ),
@@ -716,6 +912,13 @@ class _StatDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(width: 0.5, height: 32, color: AppTheme.border, margin: const EdgeInsets.symmetric(horizontal: 8));
   }
+}
+
+class _ReportInput {
+  final String reason;
+  final String details;
+
+  const _ReportInput({required this.reason, required this.details});
 }
 
 class _HelpfulButton extends StatelessWidget {

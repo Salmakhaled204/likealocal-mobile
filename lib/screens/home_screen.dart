@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (!doc.exists) return;
       final role = UserRole.fromData(doc.data());
-      if (role.isContributor && role.qualifiesForSuperUser) {
+      if (!role.isAdmin && !role.isSuperUser && role.qualifiesForSuperUser) {
         await FirebaseFirestore.instance.collection('users').doc(uid).set(
           {'role': AppUserRole.superUser, 'isSuperUser': true, 'updatedAt': FieldValue.serverTimestamp()},
           SetOptions(merge: true),
@@ -85,18 +85,19 @@ class _HomeScreenState extends State<HomeScreen> {
         future: uid == null ? Future.value(UserRole.regularFree()) : fetchUserRole(uid),
         builder: (_, snap) {
           final role = snap.data ?? UserRole.regularFree();
+          final canAddPlaces = uid != null && role.canAddPlaces;
           return Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              boxShadow: role.canAddPlaces ? AppTheme.tealShadow : [],
+              boxShadow: canAddPlaces ? AppTheme.tealShadow : [],
             ),
             child: FloatingActionButton(
               onPressed: () => _handleAddPlaceTap(context, role),
-              backgroundColor: role.canAddPlaces ? AppTheme.primary : AppTheme.surfaceHigh,
-              foregroundColor: role.canAddPlaces ? Colors.white : AppTheme.textLight,
+              backgroundColor: canAddPlaces ? AppTheme.primary : AppTheme.surfaceHigh,
+              foregroundColor: canAddPlaces ? Colors.white : AppTheme.textLight,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Icon(role.canAddPlaces ? Icons.add_rounded : Icons.lock_outline_rounded, size: 28),
+              child: Icon(canAddPlaces ? Icons.add_rounded : Icons.lock_outline_rounded, size: 28),
             ),
           );
         },
@@ -107,15 +108,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleAddPlaceTap(BuildContext context, UserRole role) {
-    if (role.canAddPlaces) {
+    if (FirebaseAuth.instance.currentUser != null && role.canAddPlaces) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const AddPlaceScreen()));
       return;
     }
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Contributor access needed'),
-        content: const Text('Only Contributors, Super Users, and Admins can add places.'),
+        title: const Text('Sign in needed'),
+        content: const Text('Create an account or sign in to add local places.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
           TextButton(onPressed: () { Navigator.pop(ctx); setState(() => _currentIndex = 3); }, child: const Text('View profile')),

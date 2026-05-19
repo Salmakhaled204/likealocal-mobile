@@ -2,8 +2,10 @@
 //  search_screen.dart  —  teal design
 // ══════════════════════════════════════════════════════════
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../models/user_role.dart';
 import '../models/place.dart';
 import '../providers/search_provider.dart';
 import '../theme/app_theme.dart';
@@ -37,7 +39,36 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void dispose() { _ctrl.dispose(); _focus.dispose(); super.dispose(); }
 
-  void _showFilters() {
+  Future<void> _showFilters() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final role = uid == null ? UserRole.regularFree() : await fetchUserRole(uid);
+    if (!role.advancedFilters) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Advanced filters are locked'),
+          content: const Text(
+            'Unlock the full LikeALocal experience with Premium, or earn Super User status through quality contributions.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pushNamed(context, '/premium');
+              },
+              child: const Text('Go Premium'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
     showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => FilterBottomSheet());
   }
 

@@ -60,7 +60,6 @@ class ChatListScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('chats')
             .where('participants', arrayContains: uid)
-            .orderBy('lastMessageTime', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -76,7 +75,17 @@ class ChatListScreen extends StatelessWidget {
             );
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = List<QueryDocumentSnapshot>.from(
+            snapshot.data?.docs ?? [],
+          )..sort((a, b) {
+              final aData = a.data() as Map<String, dynamic>;
+              final bData = b.data() as Map<String, dynamic>;
+              final aTime = aData['lastMessageTime'] as Timestamp?;
+              final bTime = bData['lastMessageTime'] as Timestamp?;
+              return (bTime?.toDate().millisecondsSinceEpoch ?? 0).compareTo(
+                aTime?.toDate().millisecondsSinceEpoch ?? 0,
+              );
+            });
 
           if (docs.isEmpty) {
             return Center(

@@ -382,10 +382,26 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         if (mounted) {
           setState(
             () => _error =
-                'Only Contributors, Super Users, and Admins can add or edit places.',
+                'Sign in with a valid account to add or edit places.',
           );
         }
         return;
+      }
+      if (!_isEditing) {
+        final placesThisMonth = await _placesPostedThisMonth(user.uid);
+        if (placesThisMonth >= role.maxPlacesPerMonth) {
+          if (mounted) {
+            setState(
+              () => _error =
+                  'Monthly place limit reached (${role.maxPlacesPerMonth}). Unlock the full LikeALocal experience with Premium.',
+            );
+          }
+          return;
+        }
+        if (role.isRegular) {
+          final shouldContinue = await _showFirstPostContributorPrompt();
+          if (shouldContinue != true) return;
+        }
       }
       if (_isEditing &&
           !role.canManagePlace(widget.placeToEdit!.ownerId, user.uid)) {
@@ -435,6 +451,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         await docRef.update(placeData);
       } else {
         await docRef.set(placeData);
+        await _recordSuccessfulContribution(user.uid, role);
       }
 
       // Step 2: Upload images using the document ID as the storage folder
@@ -449,7 +466,13 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Place added successfully! 🎉')),
+        SnackBar(
+          content: Text(
+            role.isRegular
+                ? "You're officially a Contributor! Keep sharing hidden gems."
+                : 'Place added successfully!',
+          ),
+        ),
       );
       Navigator.pop(context, true);
     } catch (e) {
@@ -459,6 +482,65 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<int> _placesPostedThisMonth(String uid) async {
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month);
+    final snap = await FirebaseFirestore.instance
+        .collection('places')
+        .where('ownerId', isEqualTo: uid)
+        .get();
+    return snap.docs.where((doc) {
+      final createdAt = doc.data()['createdAt'];
+      if (createdAt is! Timestamp) return false;
+      return !createdAt.toDate().isBefore(monthStart);
+    }).length;
+  }
+
+  Future<bool?> _showFirstPostContributorPrompt() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Post your first place and become a Contributor!'),
+        content: const Text(
+          'Share hidden gems, help locals discover better spots, and start building your LikeALocal reputation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Post place'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _recordSuccessfulContribution(String uid, UserRole role) async {
+    final nextApproved = role.stats.approvedContributions + 1;
+    final becomesContributor = role.isRegular;
+    final becomesSuperUser =
+        !role.isAdmin &&
+        !role.isSuperUser &&
+        nextApproved >= 10 &&
+        role.stats.rejectedContributions <= 2;
+
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      if (becomesSuperUser)
+        'role': AppUserRole.superUser
+      else if (becomesContributor)
+        'role': AppUserRole.contributor,
+      'isSuperUser': becomesSuperUser || role.isSuperUser,
+      'stats': {
+        'totalContributions': FieldValue.increment(1),
+        'approvedContributions': FieldValue.increment(1),
+      },
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   String? _required(String? value, String label) {

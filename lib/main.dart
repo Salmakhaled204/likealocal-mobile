@@ -14,6 +14,7 @@ import 'models/user_role.dart';
 import 'screens/home_screen.dart';
 import 'screens/admin_reports_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/premium_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/notification_service.dart';
 import 'services/proximity_service.dart';
@@ -53,6 +54,7 @@ class MyApp extends StatelessWidget {
           '/notifications': (_) => const NotificationsScreen(),
           '/settings': (_) => const SettingsScreen(),
           '/admin/reports': (_) => const AdminReportsScreen(),
+          '/premium': (_) => const PremiumScreen(),
         },
       ),
     );
@@ -214,7 +216,8 @@ class AuthWrapper extends StatelessWidget {
       return;
     }
 
-    final data = snapshot.data() ?? {};
+    final data = Map<String, dynamic>.from(snapshot.data() ?? {});
+    await _normalizeExistingUser(docRef, data);
     if (!context.mounted) return;
     await context.read<UserProvider>().loadCurrentUser();
     context.read<SearchProvider>().setDiscoveryPreferences(
@@ -223,6 +226,52 @@ class AuthWrapper extends StatelessWidget {
       atmosphere: (data['atmospherePreference'] ?? '').toString(),
       area: (data['areaPreference'] ?? '').toString(),
     );
+  }
+
+  Future<void> _normalizeExistingUser(
+    DocumentReference<Map<String, dynamic>> docRef,
+    Map<String, dynamic> data,
+  ) async {
+    final role = UserRole.fromData(data);
+    final stats = data['stats'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(data['stats'] as Map)
+        : <String, dynamic>{};
+    final limits = data['limits'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(data['limits'] as Map)
+        : <String, dynamic>{};
+    final needsSubscriptionMap = data['subscription'] is! Map<String, dynamic>;
+    final needsStats = !stats.containsKey('approvedContributions') ||
+        !stats.containsKey('rejectedContributions') ||
+        !stats.containsKey('reputationScore');
+    final needsLimits = !limits.containsKey('reviewsToday');
+
+    if (!needsSubscriptionMap && !needsStats && !needsLimits) return;
+
+    await docRef.set({
+      if (needsSubscriptionMap) ...{
+        'isPremium': role.isPremium,
+        'subscription': role.subscription.toFirestore(),
+      },
+      if (needsStats)
+        'stats': {
+          'totalContributions': role.stats.totalContributions,
+          'approvedContributions': role.stats.approvedContributions,
+          'rejectedContributions': role.stats.rejectedContributions,
+          'reputationScore': role.stats.reputationScore,
+          'totalReviews': role.stats.totalReviews,
+          'helpfulVotes': role.stats.helpfulVotes,
+          'averageRating': role.stats.averageRating,
+          'reportCount': role.stats.reportCount,
+        },
+      if (needsLimits)
+        'limits': {
+          'pinsUsed': role.limits.pinsUsed,
+          'remindersUsed': role.limits.remindersUsed,
+          'aiRequestsToday': role.limits.aiRequestsToday,
+          'reviewsToday': role.limits.reviewsToday,
+        },
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   @override

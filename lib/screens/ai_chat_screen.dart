@@ -282,11 +282,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
     final role = UserRole.fromData(userDoc.data());
     if (role.limits.aiRequestsToday >= role.maxAiRequestsPerDay) {
       _addBotMessage(
-        'You reached your ${role.subscriptionLabel} AI limit for today. Premium users get up to ${UserRole.regularFree().maxAiRequestsPerDay * 10} requests.',
+        'You reached your ${role.subscriptionLabel} AI limit for today. Unlock the full LikeALocal experience with Premium for up to 100 demo AI requests.',
       );
       return false;
     }
     await userRef.set({
+      'limits': {'aiRequestsToday': FieldValue.increment(1)},
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     return true;

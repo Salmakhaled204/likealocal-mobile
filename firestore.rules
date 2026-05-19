@@ -24,7 +24,7 @@ service cloud.firestore {
 
     function canAddPlaces() {
       return isSignedIn()
-        && currentUserData().role in ['contributor', 'super_user', 'admin'];
+        && currentUserData().role in ['regular', 'contributor', 'superUser', 'super_user', 'admin'];
     }
 
     function canManagePlace() {
@@ -144,7 +144,8 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.averageRating == 0
         && request.resource.data.reviewCount == 0
-        && request.resource.data.ownerIsSuperUser == (currentUserData().role == 'super_user');
+        && request.resource.data.ownerIsSuperUser
+          == (currentUserData().role in ['superUser', 'super_user']);
     }
 
     function validPlaceUpdate() {
@@ -207,6 +208,7 @@ service cloud.firestore {
           'lastMessage',
           'lastMessageTime',
           'createdAt',
+          'placeId',
           'unreadCount_' + request.resource.data.participants[0],
           'unreadCount_' + request.resource.data.participants[1],
         ])
@@ -214,6 +216,7 @@ service cloud.firestore {
         && request.resource.data.participants.size() == 2
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participantNames is map
+        && isOptionalString(request.resource.data.placeId, 120)
         && request.resource.data.lastMessage is string
         && request.resource.data.lastMessage.size() <= 500
         && request.resource.data.lastMessageTime is timestamp
@@ -226,10 +229,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessage',
           'lastMessageTime',
+          'placeId',
           'unreadCount_' + request.auth.uid,
           'unreadCount_' + resource.data.participants[0],
           'unreadCount_' + resource.data.participants[1],
         ])
+        && isOptionalString(request.resource.data.placeId, 120)
         && request.resource.data.lastMessage is string
         && request.resource.data.lastMessage.size() <= 500
         && request.resource.data.lastMessageTime is timestamp;
@@ -247,6 +252,68 @@ service cloud.firestore {
         && isOptionalString(request.resource.data.senderName, 120)
         && isNonEmptyString(request.resource.data.text, 500)
         && request.resource.data.timestamp is timestamp;
+    }
+
+    function validChatNotificationCreate(userId) {
+      return isSignedIn()
+        && userId != request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'type',
+          'title',
+          'body',
+          'read',
+          'chatId',
+          'senderId',
+          'otherUserId',
+          'otherUserName',
+          'createdAt',
+        ])
+        && request.resource.data.type == 'chat'
+        && request.resource.data.read == false
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.otherUserId == request.auth.uid
+        && request.resource.data.chatId is string
+        && request.resource.data.chatId.size() <= 160
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 500
+        && isOptionalString(request.resource.data.otherUserName, 120)
+        && request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.participants
+        && userId in get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.participants
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function validPlaceReportCreate(placeId) {
+      return isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.placeId == placeId
+        && request.resource.data.type == 'place'
+        && request.resource.data.status == 'open'
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 120
+        && isOptionalString(request.resource.data.details, 500)
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function validReviewReportCreate(placeId, reviewId) {
+      return isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.placeId == placeId
+        && request.resource.data.reviewId == reviewId
+        && request.resource.data.type == 'review'
+        && request.resource.data.status == 'open'
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 120
+        && isOptionalString(request.resource.data.details, 500)
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function canGetPotentialChat(chatId) {
+      return isSignedIn()
+        && chatId.matches('.*' + request.auth.uid + '.*');
     }
 
     function ownsReview() {
@@ -271,6 +338,12 @@ service cloud.firestore {
           .hasOnly(['stats', 'updatedAt'])
         && request.resource.data.stats.totalContributions
           == resource.data.stats.totalContributions
+        && request.resource.data.stats.approvedContributions
+          == resource.data.stats.approvedContributions
+        && request.resource.data.stats.rejectedContributions
+          == resource.data.stats.rejectedContributions
+        && request.resource.data.stats.reputationScore
+          == resource.data.stats.reputationScore
         && request.resource.data.stats.totalReviews
           == resource.data.stats.totalReviews
         && request.resource.data.stats.averageRating
@@ -285,13 +358,188 @@ service cloud.firestore {
         );
     }
 
+    function updatesUsageLimitsOnly(userId) {
+      return isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['limits', 'updatedAt'])
+        && request.resource.data.limits.pinsUsed >= 0
+        && request.resource.data.limits.remindersUsed >= 0
+        && request.resource.data.limits.aiRequestsToday >= 0
+        && request.resource.data.limits.reviewsToday >= 0
+        && (
+          request.resource.data.limits.pinsUsed == resource.data.limits.pinsUsed
+          || request.resource.data.limits.pinsUsed == resource.data.limits.pinsUsed + 1
+          || request.resource.data.limits.pinsUsed == resource.data.limits.pinsUsed - 1
+        )
+        && (
+          request.resource.data.limits.remindersUsed == resource.data.limits.remindersUsed
+          || request.resource.data.limits.remindersUsed == resource.data.limits.remindersUsed + 1
+          || request.resource.data.limits.remindersUsed == resource.data.limits.remindersUsed - 1
+        )
+        && (
+          request.resource.data.limits.aiRequestsToday == resource.data.limits.aiRequestsToday
+          || request.resource.data.limits.aiRequestsToday == resource.data.limits.aiRequestsToday + 1
+        )
+        && (
+          request.resource.data.limits.reviewsToday == resource.data.limits.reviewsToday
+          || request.resource.data.limits.reviewsToday == resource.data.limits.reviewsToday + 1
+        )
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function startsDemoPremium(userId) {
+      return isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isPremium', 'subscription', 'updatedAt'])
+        && request.resource.data.isPremium == true
+        && request.resource.data.subscription.plan == 'premium'
+        && request.resource.data.subscription.source == 'demo'
+        && request.resource.data.subscription.startedAt is timestamp
+        && request.resource.data.subscription.expiresAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function cancelsDemoPremium(userId) {
+      return isOwner(userId)
+        && resource.data.subscription.source == 'demo'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isPremium', 'subscription', 'updatedAt'])
+        && request.resource.data.isPremium == false
+        && request.resource.data.subscription.plan == 'free'
+        && request.resource.data.subscription.source == null
+        && request.resource.data.subscription.startedAt == null
+        && request.resource.data.subscription.expiresAt == null
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function updatesContributionProgress(userId) {
+      return isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'isSuperUser', 'stats', 'updatedAt'])
+        && resource.data.role in ['regular', 'contributor', 'superUser']
+        && request.resource.data.role in ['contributor', 'superUser']
+        && (
+          resource.data.role != 'regular'
+          || request.resource.data.role in ['contributor', 'superUser']
+        )
+        && (
+          request.resource.data.role != 'superUser'
+          || (
+            request.resource.data.stats.approvedContributions >= 10
+            && request.resource.data.stats.rejectedContributions <= 2
+          )
+        )
+        && request.resource.data.isSuperUser
+          == (request.resource.data.role == 'superUser')
+        && request.resource.data.stats.totalContributions
+          == resource.data.stats.totalContributions + 1
+        && request.resource.data.stats.approvedContributions
+          == resource.data.stats.approvedContributions + 1
+        && request.resource.data.stats.rejectedContributions
+          == resource.data.stats.rejectedContributions
+        && request.resource.data.stats.reputationScore
+          == resource.data.stats.reputationScore
+        && request.resource.data.stats.totalReviews
+          == resource.data.stats.totalReviews
+        && request.resource.data.stats.averageRating
+          == resource.data.stats.averageRating
+        && request.resource.data.stats.reportCount
+          == resource.data.stats.reportCount
+        && request.resource.data.stats.helpfulVotes
+          == resource.data.stats.helpfulVotes
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function promotesQualifiedSelfToSuperUser(userId) {
+      return isOwner(userId)
+        && resource.data.role == 'contributor'
+        && resource.data.stats.approvedContributions >= 10
+        && resource.data.stats.rejectedContributions <= 2
+        && request.resource.data.role == 'superUser'
+        && request.resource.data.isSuperUser == true
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'isSuperUser', 'updatedAt'])
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function updatesReviewActivity(userId) {
+      return isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['limits', 'stats', 'updatedAt'])
+        && request.resource.data.limits.reviewsToday
+          == resource.data.limits.reviewsToday + 1
+        && request.resource.data.limits.pinsUsed == resource.data.limits.pinsUsed
+        && request.resource.data.limits.remindersUsed
+          == resource.data.limits.remindersUsed
+        && request.resource.data.limits.aiRequestsToday
+          == resource.data.limits.aiRequestsToday
+        && request.resource.data.stats.totalReviews
+          == resource.data.stats.totalReviews + 1
+        && request.resource.data.stats.totalContributions
+          == resource.data.stats.totalContributions
+        && request.resource.data.stats.approvedContributions
+          == resource.data.stats.approvedContributions
+        && request.resource.data.stats.rejectedContributions
+          == resource.data.stats.rejectedContributions
+        && request.resource.data.stats.reputationScore
+          == resource.data.stats.reputationScore
+        && request.resource.data.stats.averageRating
+          == resource.data.stats.averageRating
+        && request.resource.data.stats.reportCount
+          == resource.data.stats.reportCount
+        && request.resource.data.stats.helpfulVotes
+          == resource.data.stats.helpfulVotes
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function normalizesOwnAccount(userId) {
+      return isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isPremium', 'subscription', 'stats', 'limits', 'updatedAt'])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.subscription.plan in ['free', 'premium']
+        && request.resource.data.isPremium
+          == (request.resource.data.subscription.plan == 'premium')
+        && request.resource.data.stats.totalContributions
+          == (
+            resource.data.stats.totalContributions == null
+            ? 0
+            : resource.data.stats.totalContributions
+          )
+        && request.resource.data.stats.approvedContributions >= 0
+        && request.resource.data.stats.rejectedContributions >= 0
+        && request.resource.data.stats.reputationScore >= 0
+        && request.resource.data.limits.pinsUsed >= 0
+        && request.resource.data.limits.remindersUsed >= 0
+        && request.resource.data.limits.aiRequestsToday >= 0
+        && request.resource.data.limits.reviewsToday >= 0
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     match /users/{userId} {
       allow create: if isOwner(userId)
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.role == 'regular'
-        && request.resource.data.subscription == 'free';
-      allow read: if isOwner(userId) || isAdmin();
+        && request.resource.data.isPremium == false
+        && request.resource.data.subscription.plan == 'free'
+        && request.resource.data.subscription.source == null
+        && request.resource.data.subscription.startedAt == null
+        && request.resource.data.subscription.expiresAt == null
+        && request.resource.data.stats.totalContributions == 0
+        && request.resource.data.stats.approvedContributions == 0
+        && request.resource.data.stats.rejectedContributions == 0
+        && request.resource.data.stats.reputationScore == 0;
+      allow read: if isSignedIn();
       allow update: if safeUserUpdate(userId)
+        || normalizesOwnAccount(userId)
+        || updatesUsageLimitsOnly(userId)
+        || startsDemoPremium(userId)
+        || cancelsDemoPremium(userId)
+        || updatesContributionProgress(userId)
+        || promotesQualifiedSelfToSuperUser(userId)
+        || updatesReviewActivity(userId)
         || updatesHelpfulStatOnly()
         || isAdmin();
       allow delete: if isAdmin();
@@ -305,7 +553,8 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
-        allow create, read, update, delete: if isOwner(userId);
+        allow create: if isOwner(userId) || validChatNotificationCreate(userId);
+        allow read, update, delete: if isOwner(userId);
       }
     }
 
@@ -326,18 +575,26 @@ service cloud.firestore {
           allow create, delete: if isOwner(userId);
           allow update: if false;
         }
+
+        match /reports/{reportId} {
+          allow read, update, delete: if isAdmin();
+          allow create: if validReviewReportCreate(placeId, reviewId);
+        }
       }
 
       match /reports/{reportId} {
         allow read, update, delete: if isAdmin();
-        allow create: if isSignedIn()
-          && request.resource.data.reporterId == request.auth.uid
-          && request.resource.data.placeId == placeId;
+        allow create: if validPlaceReportCreate(placeId);
       }
     }
 
     match /chats/{chatId} {
-      allow read: if isSignedIn()
+      allow get: if canGetPotentialChat(chatId)
+        || (
+          isSignedIn()
+          && request.auth.uid in resource.data.participants
+        );
+      allow list: if isSignedIn()
         && request.auth.uid in resource.data.participants;
       allow update: if isSignedIn()
         && request.auth.uid in resource.data.participants

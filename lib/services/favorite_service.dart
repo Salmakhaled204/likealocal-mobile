@@ -60,7 +60,10 @@ class FavoriteService {
 
       final userDoc = await userRef.get();
       final role = UserRole.fromData(userDoc.data());
-      final current = await userRef.collection('favorites').limit(6).get();
+      final current = await userRef
+          .collection('favorites')
+          .limit(role.maxFavorites + 1)
+          .get();
       if (current.docs.length >= role.maxPins) {
         return FavoriteResult.limitReached;
       }

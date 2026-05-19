@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'public_profile_screen.dart';
+
 class ChatScreen extends StatefulWidget {
   final String chatId;
   final String otherUserId;
@@ -110,6 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'lastMessageTime': now,
         'unreadCount_${widget.otherUserId}': FieldValue.increment(1),
       });
+      await _createRecipientNotification(text, user);
     } catch (_) {
       _controller.text = text;
       if (mounted) {
@@ -130,6 +133,32 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  Future<void> _createRecipientNotification(String text, User sender) async {
+    try {
+      final senderName = sender.displayName?.trim().isNotEmpty == true
+          ? sender.displayName!.trim()
+          : sender.email ?? 'Someone';
+      final preview = text.length > 90 ? '${text.substring(0, 90)}...' : text;
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.otherUserId)
+          .collection('notifications')
+          .add({
+        'type': 'chat',
+        'title': 'New message from $senderName',
+        'body': preview,
+        'read': false,
+        'chatId': widget.chatId,
+        'senderId': sender.uid,
+        'otherUserId': sender.uid,
+        'otherUserName': senderName,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // Message delivery should not fail just because notification history failed.
+    }
   }
 
   bool _isWithinSchedule(DateTime now, String start, String end) {
@@ -177,31 +206,48 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.blue[100],
-              child: Text(
-                widget.otherUserName.isNotEmpty
-                    ? widget.otherUserName[0].toUpperCase()
-                    : '?',
-                style: TextStyle(
-                  color: Colors.blue[800],
-                  fontWeight: FontWeight.bold,
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PublicProfileScreen(
+                userId: widget.otherUserId,
+                fallbackName: widget.otherUserName,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.blue[100],
+                child: Text(
+                  widget.otherUserName.isNotEmpty
+                      ? widget.otherUserName[0].toUpperCase()
+                      : '?',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              widget.otherUserName,
-              style: GoogleFonts.inter(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  widget.otherUserName,
+                  style: GoogleFonts.inter(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: Colors.black45),
+            ],
+          ),
         ),
       ),
       body: Column(
