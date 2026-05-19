@@ -684,32 +684,42 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
               ),
               const SizedBox(height: 20),
               const Text(
-                'Video (optional)',
+                'Videos (optional, max 2)',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
               const SizedBox(height: 8),
-              if (_existingVideoUrls.isNotEmpty)
-                _VideoPickedTile(
-                  label: 'Uploaded video',
-                  onRemove: _isSaving
-                      ? null
-                      : () => setState(() => _existingVideoUrls.clear()),
-                ),
-              if (_selectedVideos.isNotEmpty)
-                _VideoPickedTile(
-                  label: _selectedVideos.first.name,
-                  onRemove: _isSaving
-                      ? null
-                      : () => setState(() => _selectedVideos.clear()),
-                ),
+              ..._existingVideoUrls.asMap().entries.map(
+                    (entry) => _VideoPickedTile(
+                      label: 'Uploaded video ${entry.key + 1}',
+                      onRemove: _isSaving
+                          ? null
+                          : () => setState(
+                                () => _existingVideoUrls.removeAt(entry.key),
+                              ),
+                    ),
+                  ),
+              ..._selectedVideos.asMap().entries.map(
+                    (entry) => _VideoPickedTile(
+                      label: entry.value.name,
+                      onRemove: _isSaving
+                          ? null
+                          : () => setState(
+                                () => _selectedVideos.removeAt(entry.key),
+                              ),
+                    ),
+                  ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: _isSaving ? null : _pickVideo,
+                onPressed:
+                    _isSaving ||
+                        _existingVideoUrls.length + _selectedVideos.length >= 2
+                    ? null
+                    : _pickVideo,
                 icon: const Icon(Icons.video_library_outlined),
                 label: Text(
-                  _selectedVideos.isEmpty && _existingVideoUrls.isEmpty
-                      ? 'Pick Video from Gallery'
-                      : 'Video selected',
+                  _existingVideoUrls.length + _selectedVideos.length >= 2
+                      ? 'Max videos reached (2/2)'
+                      : 'Pick Video from Gallery (${_selectedVideos.length} selected)',
                 ),
               ),
               const SizedBox(height: 20),
