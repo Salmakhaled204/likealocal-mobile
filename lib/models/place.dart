@@ -13,6 +13,9 @@ class Place {
   final String atmosphere;
   final String localTip;
   final String recommendedDish;
+  final String bestTime;
+  final String openingHours;
+  final int viewCount;
   final String ownerId;
   final String ownerName;
   final bool ownerIsSuperUser;
@@ -34,6 +37,9 @@ class Place {
     required this.atmosphere,
     required this.localTip,
     required this.recommendedDish,
+    required this.bestTime,
+    required this.openingHours,
+    required this.viewCount,
     required this.ownerId,
     required this.ownerName,
     required this.ownerIsSuperUser,
@@ -45,9 +51,7 @@ class Place {
 
   factory Place.fromFirestore(DocumentSnapshot doc) {
     final rawData = doc.data();
-    final data = rawData is Map<String, dynamic>
-        ? rawData
-        : <String, dynamic>{};
+    final data = rawData is Map<String, dynamic> ? rawData : <String, dynamic>{};
 
     String readString(String key, [String fallback = '']) {
       final value = data[key];
@@ -93,11 +97,11 @@ class Place {
       atmosphere: readString('atmosphere'),
       localTip: readString('localTip'),
       recommendedDish: readString('recommendedDish'),
+      bestTime: readString('bestTime'),
+      openingHours: readString('openingHours'),
+      viewCount: readInt('viewCount'),
       ownerId: readString('ownerId'),
-      ownerName: readString(
-        'createdByName',
-        readString('ownerName', 'Local contributor'),
-      ),
+      ownerName: readString('createdByName', readString('ownerName', 'Local contributor')),
       ownerIsSuperUser: data['ownerIsSuperUser'] == true,
       averageRating: readDouble('averageRating'),
       reviewCount: readInt('reviewCount'),
@@ -119,6 +123,9 @@ class Place {
       'atmosphere': atmosphere,
       'localTip': localTip,
       'recommendedDish': recommendedDish,
+      'bestTime': bestTime,
+      'openingHours': openingHours,
+      'viewCount': viewCount,
       'ownerId': ownerId,
       'createdByName': ownerName,
       'ownerIsSuperUser': ownerIsSuperUser,

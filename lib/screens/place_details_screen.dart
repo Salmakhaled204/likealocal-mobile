@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../models/place.dart';
@@ -41,10 +42,20 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
     _checkFavorite();
+    _incrementViewCount();
   }
 
   @override
   void dispose() { _reviewCtrl.dispose(); _tabCtrl.dispose(); super.dispose(); }
+
+  // ── 📊 View Counter ───────────────────────────────────────────────────────
+  Future<void> _incrementViewCount() async {
+    try {
+      await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
+        'viewCount': FieldValue.increment(1),
+      });
+    } catch (_) {}
+  }
 
   Future<void> _checkFavorite() async {
     final uid = _uid;
@@ -179,9 +190,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       final reviews = await placeRef.collection('reviews').get();
       for (final r in reviews.docs) {
         final votes = await r.reference.collection('helpfulVotes').get();
-        for (final v in votes.docs) {
-          batch.delete(v.reference);
-        }
+        for (final v in votes.docs) batch.delete(v.reference);
         batch.delete(r.reference);
       }
       batch.delete(placeRef);
@@ -193,6 +202,35 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       Navigator.pop(context);
       _snack('Place deleted.');
     } catch (_) { _snack('Could not delete.'); }
+  }
+
+  // ── 🔖 QR Code dialog ─────────────────────────────────────────────────────
+  void _showQrCode(Place place) {
+    final qrData = 'likealocal://place/${place.id}?name=${Uri.encodeComponent(place.title)}&lat=${place.location.latitude}&lng=${place.location.longitude}';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.qr_code_2_rounded, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Share Place', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16))),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border)),
+            child: QrImageView(data: qrData, version: QrVersions.auto, size: 200, backgroundColor: Colors.white),
+          ),
+          const SizedBox(height: 12),
+          Text(place.title, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: AppTheme.textDark), textAlign: TextAlign.center),
+          const SizedBox(height: 4),
+          Text('Scan to view this place', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textLight), textAlign: TextAlign.center),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
   }
 
   void _showPremiumDialog() {
@@ -215,8 +253,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
   void _snack(String msg) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
   String _fmtDate(dynamic v) { if (v is! Timestamp) return ''; final d = v.toDate(); return '${d.day}/${d.month}/${d.year}'; }
-
-  // ── BUILD ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -243,6 +279,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                         const SizedBox(height: 20),
                         _buildLocalTip(place),
                         _buildDishes(place),
+                        // ── 🌙 Best Time + 🗓️ Opening Hours + 📊 Views ──
+                        _buildExtraDetails(place),
                         if (place.videoUrls.isNotEmpty) ...[const SizedBox(height: 20), _buildVideos(place)],
                         const SizedBox(height: 20),
                         _buildOwnerCard(place),
@@ -262,8 +300,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
-  // ── App bar with full hero ─────────────────────────────────────────────────
-
   Widget _buildAppBar(Place place) {
     final images = place.imageUrls.isNotEmpty ? place.imageUrls : [''];
     return SliverAppBar(
@@ -276,23 +312,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         padding: const EdgeInsets.all(8),
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
-          child: Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-          ),
+          child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle), child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18)),
         ),
       ),
       actions: [
+        // 🔖 QR Code button
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: GestureDetector(
+            onTap: () => _showQrCode(place),
+            child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle), child: const Icon(Icons.qr_code_rounded, color: Colors.white, size: 20)),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
             onTap: () => _openDirections(widget.place),
-            child: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
-              child: const Icon(Icons.compass_calibration_rounded, color: Colors.white, size: 20),
-            ),
+            child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle), child: const Icon(Icons.compass_calibration_rounded, color: Colors.white, size: 20)),
           ),
         ),
         Padding(
@@ -304,8 +340,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
               child: _isFavoriteLoading
                   ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Icon(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: _isFavorite ? AppTheme.peach : Colors.white, size: 20),
+                  : Icon(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _isFavorite ? AppTheme.peach : Colors.white, size: 20),
             ),
           ),
         ),
@@ -320,9 +355,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                     placeholder: (_, _) => Container(color: AppTheme.surfaceWarm),
                     errorWidget: (_, _, _) => Container(decoration: const BoxDecoration(gradient: AppTheme.headerGradient))),
           ),
-          // Gradient overlay
           const DecoratedBox(decoration: BoxDecoration(gradient: AppTheme.heroGradient)),
-          // Title + location at bottom
           Positioned(left: 18, right: 18, bottom: 60, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(widget.place.title, style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white, height: 1.15)),
             if (widget.place.address.isNotEmpty) ...[
@@ -334,40 +367,27 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               ]),
             ],
             const SizedBox(height: 8),
-            // Rating row
             Row(children: [
-              ...List.generate(5, (i) => Icon(
-                i < widget.place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded,
-                color: AppTheme.amber, size: 17,
-              )),
+              ...List.generate(5, (i) => Icon(i < widget.place.averageRating.round() ? Icons.star_rounded : Icons.star_outline_rounded, color: AppTheme.amber, size: 17)),
               const SizedBox(width: 6),
               Text('${widget.place.averageRating.toStringAsFixed(1)}/5', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 12),
+              // 📊 View counter in header
+              Icon(Icons.visibility_outlined, size: 14, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text('${widget.place.viewCount} views', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70)),
             ]),
           ])),
-          // Thumbnail strip bottom-right (like reference)
           if (widget.place.imageUrls.length > 1)
             Positioned(right: 14, bottom: 56, child: Row(children: [
-              ...widget.place.imageUrls.take(3).map((url) => Container(
-                width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                  image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
-                ),
-              )),
+              ...widget.place.imageUrls.take(3).map((url) => Container(width: 46, height: 36, margin: const EdgeInsets.only(left: 6), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white, width: 1.5), image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover)))),
               if (widget.place.imageUrls.length > 3)
-                Container(
-                  width: 46, height: 36, margin: const EdgeInsets.only(left: 6),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.black54, border: Border.all(color: Colors.white, width: 1.5)),
-                  child: Center(child: Text('+${widget.place.imageUrls.length - 3}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold))),
-                ),
+                Container(width: 46, height: 36, margin: const EdgeInsets.only(left: 6), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.black54, border: Border.all(color: Colors.white, width: 1.5)), child: Center(child: Text('+${widget.place.imageUrls.length - 3}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)))),
             ])),
         ]),
       ),
     );
   }
-
-  // ── Tab bar (Overview / Details / Reviews / Explore Nearby) ───────────────
 
   Widget _buildTabBar() {
     return Container(
@@ -383,20 +403,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         isScrollable: true,
         tabAlignment: TabAlignment.start,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        tabs: const [
-          Tab(text: 'Overview'),
-          Tab(text: 'Details'),
-          Tab(text: 'Reviews'),
-          Tab(text: 'Explore Nearby'),
-        ],
-        onTap: (i) {
-          // Scroll to section if desired — for now tabs just visually select
-        },
+        tabs: const [Tab(text: 'Overview'), Tab(text: 'Details'), Tab(text: 'Reviews'), Tab(text: 'Explore Nearby')],
       ),
     );
   }
-
-  // ── Stat chips row (Distance / Travel Time / Weather style) ───────────────
 
   Widget _buildStatChips(Place place) {
     return Container(
@@ -412,8 +422,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
-  // ── Description ────────────────────────────────────────────────────────────
-
   Widget _buildDescription(Place place) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Description', style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
@@ -421,8 +429,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       Text(place.description, style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textMid, height: 1.7)),
     ]);
   }
-
-  // ── Local tip ──────────────────────────────────────────────────────────────
 
   Widget _buildLocalTip(Place place) {
     if (place.localTip.isEmpty) return const SizedBox.shrink();
@@ -444,8 +450,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
-  // ── Recommended dishes ─────────────────────────────────────────────────────
-
   Widget _buildDishes(Place place) {
     if (place.recommendedDish.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -464,7 +468,34 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
-  // ── Videos ─────────────────────────────────────────────────────────────────
+  // ── 🌙 Best Time + 🗓️ Opening Hours + 📊 Views ────────────────────────────
+  Widget _buildExtraDetails(Place place) {
+    final hasAny = place.bestTime.isNotEmpty || place.openingHours.isNotEmpty || place.viewCount > 0;
+    if (!hasAny) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Place Info', style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+          const SizedBox(height: 10),
+
+          // 📊 View counter
+          if (place.viewCount > 0)
+            _InfoRow(icon: Icons.visibility_outlined, iconColor: AppTheme.softBlue, iconBg: const Color(0xFFE8F1F9), label: 'Total views', value: '${place.viewCount} people visited this page'),
+
+          // 🌙 Best Time to Visit
+          if (place.bestTime.isNotEmpty)
+            _InfoRow(icon: Icons.access_time_outlined, iconColor: AppTheme.mint, iconBg: AppTheme.mintLight, label: 'Best time to visit', value: place.bestTime),
+
+          // 🗓️ Opening Hours
+          if (place.openingHours.isNotEmpty)
+            _InfoRow(icon: Icons.schedule_outlined, iconColor: AppTheme.amber, iconBg: const Color(0xFFFDF6E3), label: 'Opening hours', value: place.openingHours),
+        ],
+      ),
+    );
+  }
 
   Widget _buildVideos(Place place) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -473,8 +504,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       ...place.videoUrls.map((url) => Padding(padding: const EdgeInsets.only(bottom: 12), child: _VideoPlayerCard(url: url))),
     ]);
   }
-
-  // ── Owner card ─────────────────────────────────────────────────────────────
 
   Widget _buildOwnerCard(Place place) {
     if (place.ownerName.isEmpty) return const SizedBox.shrink();
@@ -485,8 +514,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         Container(
           width: 44, height: 44,
           decoration: BoxDecoration(gradient: AppTheme.primaryGradient, shape: BoxShape.circle),
-          child: Center(child: Text(place.ownerName.isNotEmpty ? place.ownerName[0].toUpperCase() : '?',
-              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
+          child: Center(child: Text(place.ownerName.isNotEmpty ? place.ownerName[0].toUpperCase() : '?', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white))),
         ),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -520,8 +548,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
-  // ── Reviews ────────────────────────────────────────────────────────────────
-
   Widget _buildReviews() {
     final canReview = _uid != null;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -538,18 +564,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             final star = i + 1;
             return GestureDetector(
               onTap: canReview ? () => setState(() => _selectedRating = star) : null,
-              child: Padding(padding: const EdgeInsets.only(right: 4), child: Icon(
-                star <= _selectedRating ? Icons.star_rounded : Icons.star_outline_rounded,
-                color: AppTheme.amber, size: 30,
-              )),
+              child: Padding(padding: const EdgeInsets.only(right: 4), child: Icon(star <= _selectedRating ? Icons.star_rounded : Icons.star_outline_rounded, color: AppTheme.amber, size: 30)),
             );
           })),
           const SizedBox(height: 12),
           TextField(
             controller: _reviewCtrl, enabled: canReview, maxLines: 3, maxLength: 300,
             style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textDark),
-            decoration: InputDecoration(hintText: canReview ? 'Share your experience…' : 'Log in to share.',
-                counterStyle: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight)),
+            decoration: InputDecoration(hintText: canReview ? 'Share your experience…' : 'Log in to share.', counterStyle: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight)),
           ),
           const SizedBox(height: 8),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
@@ -557,9 +579,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             SizedBox(height: 40, child: ElevatedButton(
               onPressed: !canReview || _isSubmittingReview ? null : _submitReview,
               style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40), padding: const EdgeInsets.symmetric(horizontal: 20)),
-              child: _isSubmittingReview
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text(_editingReviewId != null ? 'Update' : 'Submit'),
+              child: _isSubmittingReview ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_editingReviewId != null ? 'Update' : 'Submit'),
             )),
           ]),
         ]),
@@ -568,13 +588,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('places').doc(_placeId).collection('reviews').orderBy('createdAt', descending: true).snapshots(),
         builder: (_, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary)));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(child: Padding(padding: const EdgeInsets.all(20),
-                child: Text('No reviews yet. Be the first! 🌟', style: GoogleFonts.poppins(color: AppTheme.textLight, fontSize: 13))));
-          }
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary)));
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('No reviews yet. Be the first! 🌟', style: GoogleFonts.poppins(color: AppTheme.textLight, fontSize: 13))));
           return Column(children: snapshot.data!.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             final reviewOwnerId = (data['userId'] as String?) ?? '';
@@ -585,19 +600,13 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             final email = ((data['userEmail'] as String?) ?? '').trim();
             final label = name.isNotEmpty ? name : email.isNotEmpty ? email : 'Anonymous';
             final date = _fmtDate(data['updatedAt'] ?? data['createdAt']);
-
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Container(
-                    width: 38, height: 38,
-                    decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
-                    child: Center(child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
-                        style: GoogleFonts.poppins(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.bold))),
-                  ),
+                  Container(width: 38, height: 38, decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle), child: Center(child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?', style: GoogleFonts.poppins(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.bold)))),
                   const SizedBox(width: 10),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
@@ -627,8 +636,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     ]);
   }
 
-  // ── Bottom CTA (matches the reference: price left, teal "Booking Now" right) ──
-
   Widget _buildBottomCTA(Place place) {
     final uid = _uid;
     return FutureBuilder<UserRole>(
@@ -638,49 +645,22 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         final canManage = uid != null && role.canManagePlace(place.ownerId, uid);
         return Container(
           padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(context).padding.bottom + 14),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4))],
-          ),
+          decoration: BoxDecoration(color: AppTheme.surface, borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, -4))]),
           child: Row(children: [
-            // Left: place info / manage buttons
             if (canManage) ...[
-              GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AddPlaceScreen(placeToEdit: place))),
-                child: Container(width: 48, height: 48,
-                  decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryDim)),
-                  child: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 22)),
-              ),
+              GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AddPlaceScreen(placeToEdit: place))), child: Container(width: 48, height: 48, decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryDim)), child: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 22))),
               const SizedBox(width: 10),
-              GestureDetector(
-                onTap: () => _deletePlace(place),
-                child: Container(width: 48, height: 48,
-                  decoration: BoxDecoration(color: AppTheme.errorColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.errorColor.withValues(alpha: 0.3))),
-                  child: Icon(Icons.delete_outline_rounded, color: AppTheme.errorColor, size: 22)),
-              ),
+              GestureDetector(onTap: () => _deletePlace(place), child: Container(width: 48, height: 48, decoration: BoxDecoration(color: AppTheme.errorColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.errorColor.withValues(alpha: 0.3))), child: Icon(Icons.delete_outline_rounded, color: AppTheme.errorColor, size: 22))),
               const SizedBox(width: 10),
             ] else ...[
-              // Reminder + chat icon buttons
-              GestureDetector(
-                onTap: () => _saveReminder(place),
-                child: Container(width: 48, height: 48,
-                  decoration: BoxDecoration(color: AppTheme.surfaceWarm, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.border)),
-                  child: const Icon(Icons.alarm_rounded, color: AppTheme.primary, size: 22)),
-              ),
+              GestureDetector(onTap: () => _saveReminder(place), child: Container(width: 48, height: 48, decoration: BoxDecoration(color: AppTheme.surfaceWarm, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.border)), child: const Icon(Icons.alarm_rounded, color: AppTheme.primary, size: 22))),
               const SizedBox(width: 10),
             ],
-            // Directions / main CTA — teal pill matching reference
             Expanded(child: SizedBox(height: 52, child: ElevatedButton.icon(
               onPressed: () => _openDirections(place),
               icon: const Icon(Icons.directions_rounded, size: 20),
               label: const Text('Get Directions'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
             ))),
           ]),
         );
@@ -689,22 +669,43 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   }
 }
 
-// ── Sub-widgets ────────────────────────────────────────────────────────────────
-
-class _StatChip extends StatelessWidget {
+// ── Info Row widget ────────────────────────────────────────────────────────────
+class _InfoRow extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
-  final String label, value;
-  const _StatChip({required this.icon, required this.iconColor, required this.label, required this.value});
+  final Color iconBg;
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.icon, required this.iconColor, required this.iconBg, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(child: Column(children: [
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, size: 16, color: iconColor),
-        const SizedBox(width: 4),
-        Flexible(child: Text(value, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark), overflow: TextOverflow.ellipsis)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border), boxShadow: AppTheme.softShadow),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)), child: Icon(icon, size: 20, color: iconColor)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 2),
+          Text(value, style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textDark, fontWeight: FontWeight.w500)),
+        ])),
       ]),
+    );
+  }
+}
+
+// ── Sub-widgets ────────────────────────────────────────────────────────────────
+class _StatChip extends StatelessWidget {
+  final IconData icon; final Color iconColor; final String label, value;
+  const _StatChip({required this.icon, required this.iconColor, required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(child: Column(children: [
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 16, color: iconColor), const SizedBox(width: 4), Flexible(child: Text(value, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark), overflow: TextOverflow.ellipsis))]),
       const SizedBox(height: 2),
       Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textLight)),
     ]));
@@ -713,18 +714,12 @@ class _StatChip extends StatelessWidget {
 
 class _StatDivider extends StatelessWidget {
   @override
-  Widget build(BuildContext context) {
-    return Container(width: 0.5, height: 32, color: AppTheme.border, margin: const EdgeInsets.symmetric(horizontal: 8));
-  }
+  Widget build(BuildContext context) => Container(width: 0.5, height: 32, color: AppTheme.border, margin: const EdgeInsets.symmetric(horizontal: 8));
 }
 
 class _HelpfulButton extends StatelessWidget {
-  final String placeId, reviewId, reviewOwnerId;
-  final String? currentUserId;
-  final int count;
-  final VoidCallback onTap;
+  final String placeId, reviewId, reviewOwnerId; final String? currentUserId; final int count; final VoidCallback onTap;
   const _HelpfulButton({required this.placeId, required this.reviewId, required this.reviewOwnerId, required this.currentUserId, required this.count, required this.onTap});
-
   @override
   Widget build(BuildContext context) {
     if (currentUserId == null || currentUserId == reviewOwnerId) return _HelpfulPill(isActive: false, count: count, onTap: null);
@@ -736,33 +731,19 @@ class _HelpfulButton extends StatelessWidget {
 }
 
 class _HelpfulPill extends StatelessWidget {
-  final bool isActive;
-  final int count;
-  final VoidCallback? onTap;
+  final bool isActive; final int count; final VoidCallback? onTap;
   const _HelpfulPill({required this.isActive, required this.count, required this.onTap});
-
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isActive ? AppTheme.primaryLight : AppTheme.surfaceWarm,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: isActive ? AppTheme.primaryDim : AppTheme.border),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(isActive ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined, size: 14, color: isActive ? AppTheme.primary : AppTheme.textLight),
-            const SizedBox(width: 5),
-            Text('$count helpful', style: GoogleFonts.poppins(fontSize: 11, color: isActive ? AppTheme.primary : AppTheme.textMid, fontWeight: FontWeight.w500)),
-          ]),
-        ),
-      ),
-    );
+    return Align(alignment: Alignment.centerLeft, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(999), child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: isActive ? AppTheme.primaryLight : AppTheme.surfaceWarm, borderRadius: BorderRadius.circular(999), border: Border.all(color: isActive ? AppTheme.primaryDim : AppTheme.border)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(isActive ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined, size: 14, color: isActive ? AppTheme.primary : AppTheme.textLight),
+        const SizedBox(width: 5),
+        Text('$count helpful', style: GoogleFonts.poppins(fontSize: 11, color: isActive ? AppTheme.primary : AppTheme.textMid, fontWeight: FontWeight.w500)),
+      ]),
+    )));
   }
 }
 
@@ -776,36 +757,25 @@ class _VideoPlayerCard extends StatefulWidget {
 class _VideoPlayerCardState extends State<_VideoPlayerCard> {
   late final VideoPlayerController _controller;
   bool _ready = false;
-
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..initialize().then((_) { if (mounted) setState(() => _ready = true); });
   }
-
   @override
   void dispose() { _controller.dispose(); super.dispose(); }
-
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: AspectRatio(
-        aspectRatio: _ready ? _controller.value.aspectRatio : 16 / 9,
-        child: Stack(alignment: Alignment.center, children: [
-          Container(color: AppTheme.surfaceWarm),
-          if (_ready) GestureDetector(
-            onTap: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()),
-            child: VideoPlayer(_controller),
-          ) else const CircularProgressIndicator(color: AppTheme.primary),
-          if (_ready && !_controller.value.isPlaying)
-            DecoratedBox(
-              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.25), shape: BoxShape.circle),
-              child: const Padding(padding: EdgeInsets.all(14), child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 34)),
-            ),
-        ]),
-      ),
-    );
+    return ClipRRect(borderRadius: BorderRadius.circular(16), child: AspectRatio(
+      aspectRatio: _ready ? _controller.value.aspectRatio : 16 / 9,
+      child: Stack(alignment: Alignment.center, children: [
+        Container(color: AppTheme.surfaceWarm),
+        if (_ready) GestureDetector(onTap: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()), child: VideoPlayer(_controller))
+        else const CircularProgressIndicator(color: AppTheme.primary),
+        if (_ready && !_controller.value.isPlaying)
+          DecoratedBox(decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.25), shape: BoxShape.circle), child: const Padding(padding: EdgeInsets.all(14), child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 34))),
+      ]),
+    ));
   }
 }

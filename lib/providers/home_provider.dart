@@ -10,7 +10,6 @@ const _kCachedRecommendations = 'cached_recommendations_v1';
 
 class HomeProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static const _placesCacheKey = 'cached_home_places';
 
   List<Place> _places = [];
   List<Place> _personalizedRecommendations = [];
@@ -33,8 +32,6 @@ class HomeProvider extends ChangeNotifier {
 
   // ── Serialisation helpers ─────────────────────────────────────────────────
 
-  /// Converts a Place into a JSON-serialisable map.
-  /// We only persist the fields that Place.fromFirestore also reads.
   static Map<String, dynamic> _placeToJson(Place p) {
     return {
       'id': p.id,
@@ -52,6 +49,9 @@ class HomeProvider extends ChangeNotifier {
       'atmosphere': p.atmosphere,
       'localTip': p.localTip,
       'recommendedDish': p.recommendedDish,
+      'bestTime': p.bestTime,
+      'openingHours': p.openingHours,
+      'viewCount': p.viewCount,
       'ownerId': p.ownerId,
       'createdByName': p.ownerName,
       'ownerIsSuperUser': p.ownerIsSuperUser,
@@ -60,7 +60,6 @@ class HomeProvider extends ChangeNotifier {
     };
   }
 
-  /// Reconstructs a Place from the cached JSON map (no DocumentSnapshot needed).
   static Place _placeFromJson(Map<String, dynamic> json) {
     final loc = json['location'] as Map<String, dynamic>? ?? {};
     return Place(
@@ -79,6 +78,9 @@ class HomeProvider extends ChangeNotifier {
       atmosphere: json['atmosphere'] ?? '',
       localTip: json['localTip'] ?? '',
       recommendedDish: json['recommendedDish'] ?? '',
+      bestTime: json['bestTime'] ?? '',
+      openingHours: json['openingHours'] ?? '',
+      viewCount: (json['viewCount'] as num?)?.toInt() ?? 0,
       ownerId: json['ownerId'] ?? '',
       ownerName: json['createdByName'] ?? json['ownerName'] ?? 'Local contributor',
       ownerIsSuperUser: json['ownerIsSuperUser'] ?? false,
@@ -151,7 +153,6 @@ class HomeProvider extends ChangeNotifier {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  /// Fetch places from Firestore.  On network failure, falls back to cache.
   Future<void> fetchPlaces() async {
     _isLoading = true;
     _errorMessage = null;
@@ -161,9 +162,8 @@ class HomeProvider extends ChangeNotifier {
     try {
       final snapshot = await _firestore.collection('places').get();
       _places = _sortPlaces(snapshot.docs.map(Place.fromFirestore).toList());
-      await _savePlacesToCache(_places); // persist for offline use
+      await _savePlacesToCache(_places);
     } on FirebaseException catch (e) {
-      // Network / Firestore error — try cache
       _errorMessage = _firestoreErrorMessage(
         e,
         'Failed to load places. Please check Firebase setup.',
@@ -186,7 +186,6 @@ class HomeProvider extends ChangeNotifier {
     if (cached.isNotEmpty) {
       _places = cached;
       _isOffline = true;
-      // Suppress the error message if we have cached data to show
       _errorMessage = null;
     }
   }
@@ -243,12 +242,9 @@ class HomeProvider extends ChangeNotifier {
             .toList();
       }
 
-      _personalizedRecommendations =
-          _sortPlaces(matches).take(10).toList();
-
+      _personalizedRecommendations = _sortPlaces(matches).take(10).toList();
       await _saveRecommendationsToCache(_personalizedRecommendations);
     } catch (e) {
-      // Try loading cached recommendations on error
       final cached = await _loadRecommendationsFromCache();
       _personalizedRecommendations = cached;
       if (kDebugMode) {
