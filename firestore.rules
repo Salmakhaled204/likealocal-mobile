@@ -85,9 +85,12 @@ service cloud.firestore {
           'atmosphere',
           'localTip',
           'recommendedDish',
+          'bestTime',
+          'openingHours',
           'address',
           'imageUrls',
           'videoUrls',
+          'viewCount',
           'location',
           'createdBy',
           'createdByName',
@@ -120,6 +123,8 @@ service cloud.firestore {
         ]
         && isOptionalString(request.resource.data.localTip, 300)
         && isOptionalString(request.resource.data.recommendedDish, 120)
+        && isOptionalString(request.resource.data.bestTime, 120)
+        && isOptionalString(request.resource.data.openingHours, 300)
         && isNonEmptyString(request.resource.data.address, 300)
         && isStringList(request.resource.data.imageUrls, 15, 500)
         && isStringList(request.resource.data.videoUrls, 5, 500)
@@ -132,6 +137,8 @@ service cloud.firestore {
         && request.resource.data.averageRating is number
         && request.resource.data.averageRating >= 0
         && request.resource.data.averageRating <= 5
+        && request.resource.data.viewCount is int
+        && request.resource.data.viewCount >= 0
         && request.resource.data.reviewCount is int
         && request.resource.data.reviewCount >= 0
         && request.resource.data.updatedAt is timestamp
@@ -143,6 +150,7 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.averageRating == 0
+        && request.resource.data.viewCount == 0
         && request.resource.data.reviewCount == 0
         && request.resource.data.ownerIsSuperUser
           == (currentUserData().role in ['superUser', 'super_user']);
@@ -155,7 +163,14 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.ownerIsSuperUser == resource.data.ownerIsSuperUser
         && request.resource.data.averageRating == resource.data.averageRating
+        && request.resource.data.viewCount == resource.data.viewCount
         && request.resource.data.reviewCount == resource.data.reviewCount;
+    }
+
+    function validViewCountUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount'])
+        && resource.data.viewCount is int
+        && request.resource.data.viewCount == resource.data.viewCount + 1;
     }
 
     function validReviewCreate(reviewId) {
@@ -561,7 +576,7 @@ service cloud.firestore {
     match /places/{placeId} {
       allow read: if true;
       allow create: if canAddPlaces() && validPlaceCreate();
-      allow update: if canManagePlace() && validPlaceUpdate();
+      allow update: if (canManagePlace() && validPlaceUpdate()) || validViewCountUpdate();
       allow delete: if canManagePlace();
 
       match /reviews/{reviewId} {
