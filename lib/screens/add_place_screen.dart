@@ -166,10 +166,9 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   Future<void> _pickVideo() async {
     try {
-      final hasVideo =
-          _existingVideoUrls.isNotEmpty || _selectedVideos.isNotEmpty;
-      if (hasVideo) {
-        setState(() => _error = 'You can attach one video per place.');
+      final totalVideos = _existingVideoUrls.length + _selectedVideos.length;
+      if (totalVideos >= 2) {
+        setState(() => _error = 'Maximum 2 videos allowed per place.');
         return;
       }
       final video = await _picker.pickVideo(
@@ -178,7 +177,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       );
       if (video != null) {
         setState(() {
-          _selectedVideos = [video];
+          _selectedVideos = [..._selectedVideos, video];
           _error = null;
         });
       }
