@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:workmanager/workmanager.dart';
+
 import 'firebase_options.dart';
 import 'providers/home_provider.dart';
 import 'providers/search_provider.dart';
@@ -22,12 +24,21 @@ import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
   await NotificationService.initialize();
-  // Register the WorkManager callback dispatcher for background proximity checks.
-  // Must be called before runApp so it is ready before any task fires.
-  await Workmanager().initialize(proximityCallbackDispatcher);
+
+  // Workmanager does not support Flutter Web.
+  // So we only initialize it when the app is NOT running on Chrome/Web.
+  if (!kIsWeb) {
+    await Workmanager().initialize(proximityCallbackDispatcher);
+  }
+
   runApp(const MyApp());
 }
 
@@ -39,6 +50,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     NotificationService.navigatorKey = _navigatorKey;
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => HomeProvider()),
@@ -64,6 +76,7 @@ class MyApp extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Splash
 // ─────────────────────────────────────────────────────────────────────────────
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -81,18 +94,25 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
+
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+
     _scale = Tween<double>(
       begin: 0.85,
       end: 1.0,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
+
     _ctrl.forward();
+
     Future<void>.delayed(const Duration(milliseconds: 2000), () {
-      if (mounted) setState(() => _ready = true);
+      if (mounted) {
+        setState(() => _ready = true);
+      }
     });
   }
 
@@ -116,7 +136,6 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo bubble
                 Container(
                   width: 96,
                   height: 96,
@@ -157,7 +176,6 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
                 const SizedBox(height: 56),
-                // Soft loading dots
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: List.generate(3, (i) {
@@ -169,8 +187,8 @@ class _SplashScreenState extends State<SplashScreen>
                         color: i == 0
                             ? AppTheme.primary
                             : i == 1
-                            ? AppTheme.primaryDim
-                            : AppTheme.border,
+                                ? AppTheme.primaryDim
+                                : AppTheme.border,
                         shape: BoxShape.circle,
                       ),
                     );
@@ -188,12 +206,14 @@ class _SplashScreenState extends State<SplashScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth wrapper
 // ─────────────────────────────────────────────────────────────────────────────
+
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
   Future<void> _prepareUser(BuildContext context, User user) async {
     final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await docRef.get();
+
     await NotificationService.syncTokenForCurrentUser();
 
     if (!snapshot.exists) {
@@ -205,27 +225,33 @@ class AuthWrapper extends StatelessWidget {
           photoUrl: user.photoURL ?? '',
         ),
       );
+
       if (!context.mounted) return;
+
       await context.read<UserProvider>().loadCurrentUser();
+
       context.read<SearchProvider>().setDiscoveryPreferences(
-        categories: const [],
-        budget: '',
-        atmosphere: '',
-        area: '',
-      );
+            categories: const [],
+            budget: '',
+            atmosphere: '',
+            area: '',
+          );
+
       return;
     }
 
     final data = Map<String, dynamic>.from(snapshot.data() ?? {});
     await _normalizeExistingUser(docRef, data);
     if (!context.mounted) return;
+
     await context.read<UserProvider>().loadCurrentUser();
+
     context.read<SearchProvider>().setDiscoveryPreferences(
-      categories: List<String>.from(data['preferences'] ?? []),
-      budget: (data['budgetPreference'] ?? '').toString(),
-      atmosphere: (data['atmospherePreference'] ?? '').toString(),
-      area: (data['areaPreference'] ?? '').toString(),
-    );
+          categories: List<String>.from(data['preferences'] ?? []),
+          budget: (data['budgetPreference'] ?? '').toString(),
+          atmosphere: (data['atmospherePreference'] ?? '').toString(),
+          area: (data['areaPreference'] ?? '').toString(),
+        );
   }
 
   Future<void> _normalizeExistingUser(
@@ -292,12 +318,22 @@ class AuthWrapper extends StatelessWidget {
         }
 
         final user = snapshot.data;
+
         if (user == null) {
-          ProximityService.stop();
+          // ProximityService may use platform-specific code.
+          // Do not run it on Chrome/Web.
+          if (!kIsWeb) {
+            ProximityService.stop();
+          }
+
           return const LoginScreen();
         }
 
-        ProximityService.start();
+        // ProximityService may use platform-specific code.
+        // Do not run it on Chrome/Web.
+        if (!kIsWeb) {
+          ProximityService.start();
+        }
 
         return FutureBuilder<void>(
           future: _prepareUser(context, user),
@@ -313,6 +349,7 @@ class AuthWrapper extends StatelessWidget {
                 ),
               );
             }
+
             if (profileSnapshot.hasError) {
               return Scaffold(
                 backgroundColor: AppTheme.background,
@@ -350,6 +387,7 @@ class AuthWrapper extends StatelessWidget {
                 ),
               );
             }
+
             return const HomeScreen();
           },
         );
@@ -361,6 +399,7 @@ class AuthWrapper extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Login / Sign-up
 // ─────────────────────────────────────────────────────────────────────────────
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -391,41 +430,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // ── Validators ────────────────────────────────────────────────────────────
   String? _validateName(String? v) {
     if (_isLogin) return null;
+
     final s = v?.trim() ?? '';
+
     if (s.isEmpty) return 'Name is required';
     if (s.length < 2) return 'Name is too short';
+
     return null;
   }
 
   String? _validateEmail(String? v) {
     final s = v?.trim() ?? '';
+
     if (s.isEmpty) return 'Email is required';
+
     if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(s)) {
       return 'Enter a valid email';
     }
+
     return null;
   }
 
   String? _validatePassword(String? v) {
     final s = v ?? '';
+
     if (s.isEmpty) return 'Password is required';
     if (s.length < 6) return 'Minimum 6 characters';
+
     return null;
   }
 
   String? _validateConfirm(String? v) {
     if (_isLogin) return null;
+
     if (v != _passCtrl.text) return 'Passwords do not match';
+
     return null;
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+
     _startLoading();
+
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
@@ -436,30 +485,36 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {
       _setMsg('An unexpected error occurred.', error: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _signup() async {
     if (!_formKey.currentState!.validate()) return;
+
     _startLoading();
+
     try {
       final name = _nameCtrl.text.trim();
       final email = _emailCtrl.text.trim();
+
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: _passCtrl.text.trim(),
       );
+
       final user = cred.user;
+
       if (user == null) {
         _setMsg('Could not create account. Please try again.', error: true);
         return;
       }
+
       await user.updateDisplayName(name);
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set(
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
             UserRole.defaultFirestoreData(
               uid: user.uid,
               email: email,
@@ -472,17 +527,22 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {
       _setMsg('An unexpected error occurred.', error: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _resetPassword() async {
     final email = _emailCtrl.text.trim();
+
     if (email.isEmpty || _validateEmail(email) != null) {
       _setMsg('Enter your email first, then tap Forgot password.', error: true);
       return;
     }
+
     _startLoading();
+
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
       _setMsg('Reset email sent — check your inbox.', error: false);
@@ -491,30 +551,37 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {
       _setMsg('Could not send reset email.', error: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  void _startLoading() => setState(() {
-    _isLoading = true;
-    _message = '';
-    _isError = false;
-  });
+  void _startLoading() {
+    setState(() {
+      _isLoading = true;
+      _message = '';
+      _isError = false;
+    });
+  }
 
   void _setMsg(String msg, {required bool error}) {
     if (!mounted) return;
+
     setState(() {
       _message = msg;
       _isError = error;
     });
   }
 
-  void _switchMode(bool login) => setState(() {
-    _isLogin = login;
-    _message = '';
-    _isError = false;
-    _formKey.currentState?.reset();
-  });
+  void _switchMode(bool login) {
+    setState(() {
+      _isLogin = login;
+      _message = '';
+      _isError = false;
+      _formKey.currentState?.reset();
+    });
+  }
 
   String _authError(FirebaseAuthException e) {
     switch (e.code) {
@@ -537,7 +604,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -551,7 +617,6 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // ── Logo ────────────────────────────────────────────────
                   Container(
                     width: 80,
                     height: 80,
@@ -592,7 +657,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  // ── Mode toggle ──────────────────────────────────────────
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -617,7 +681,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // ── Name (sign-up) ───────────────────────────────────────
                   if (!_isLogin) ...[
                     _FieldLabel('Full name'),
                     const SizedBox(height: 8),
@@ -637,7 +700,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 16),
                   ],
 
-                  // ── Email ────────────────────────────────────────────────
                   _FieldLabel('Email'),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -655,7 +717,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── Password ─────────────────────────────────────────────
                   _FieldLabel('Password'),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -671,13 +732,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       suffixIcon: _EyeToggle(
                         obscure: _obscurePass,
-                        onToggle: () =>
-                            setState(() => _obscurePass = !_obscurePass),
+                        onToggle: () {
+                          setState(() => _obscurePass = !_obscurePass);
+                        },
                       ),
                     ),
                   ),
 
-                  // ── Confirm password (sign-up) ────────────────────────────
                   if (!_isLogin) ...[
                     const SizedBox(height: 16),
                     _FieldLabel('Confirm password'),
@@ -695,15 +756,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         suffixIcon: _EyeToggle(
                           obscure: _obscureConfirm,
-                          onToggle: () => setState(
-                            () => _obscureConfirm = !_obscureConfirm,
-                          ),
+                          onToggle: () {
+                            setState(
+                              () => _obscureConfirm = !_obscureConfirm,
+                            );
+                          },
                         ),
                       ),
                     ),
                   ],
 
-                  // ── Forgot password ──────────────────────────────────────
                   if (_isLogin) ...[
                     const SizedBox(height: 10),
                     Align(
@@ -726,7 +788,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
 
-                  // ── Status message ───────────────────────────────────────
                   if (_message.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     Container(
@@ -736,9 +797,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: _isError
-                            ? AppTheme.peachLight
-                            : AppTheme.mintLight,
+                        color:
+                            _isError ? AppTheme.peachLight : AppTheme.mintLight,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _isError
@@ -761,9 +821,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               _message,
                               style: GoogleFonts.poppins(
                                 fontSize: 13,
-                                color: _isError
-                                    ? AppTheme.peach
-                                    : AppTheme.mint,
+                                color:
+                                    _isError ? AppTheme.peach : AppTheme.mint,
                               ),
                             ),
                           ),
@@ -774,7 +833,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 28),
 
-                  // ── CTA ─────────────────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -796,7 +854,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Footer ───────────────────────────────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -832,7 +889,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// ── Small reusable widgets ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Small reusable widgets
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _Tab extends StatelessWidget {
   final String label;
@@ -884,6 +943,7 @@ class _Tab extends StatelessWidget {
 
 class _FieldLabel extends StatelessWidget {
   final String text;
+
   const _FieldLabel(this.text);
 
   @override
@@ -906,7 +966,10 @@ class _EyeToggle extends StatelessWidget {
   final bool obscure;
   final VoidCallback onToggle;
 
-  const _EyeToggle({required this.obscure, required this.onToggle});
+  const _EyeToggle({
+    required this.obscure,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {

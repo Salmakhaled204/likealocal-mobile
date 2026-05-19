@@ -482,10 +482,58 @@ class _HomeTabState extends State<_HomeTab> {
                   return SliverToBoxAdapter(child: _EmptyState(icon: Icons.explore_outlined, title: 'No places yet', subtitle: 'Be the first to add one!'));
                 }
 
-                final filtered = _selectedCategory == 'All'
-                    ? hp.places
-                    : hp.places.where((p) => p.category.toLowerCase().contains(_selectedCategory.toLowerCase())).toList();
+              final filtered = _selectedCategory == 'All'
+    ? hp.places
+    : hp.places.where((p) {
+        final selected = _selectedCategory.toLowerCase();
 
+        final text = [
+          p.title,
+          p.description,
+          p.category,
+          p.address,
+          p.atmosphere,
+          p.localTip,
+          p.recommendedDish,
+        ].join(' ').toLowerCase();
+
+        if (selected == 'food') {
+          return text.contains('food') ||
+              text.contains('restaurant') ||
+              text.contains('restaurants') ||
+              text.contains('cafe') ||
+              text.contains('cafes') ||
+              text.contains('coffee') ||
+              text.contains('dessert') ||
+              text.contains('brunch');
+        }
+
+        if (selected == 'culture') {
+          return text.contains('culture') ||
+              text.contains('museum') ||
+              text.contains('palace') ||
+              text.contains('history') ||
+              text.contains('heritage') ||
+              text.contains('art');
+        }
+
+        if (selected == 'hidden') {
+          return text.contains('hidden') ||
+              text.contains('hidden gems') ||
+              text.contains('local') ||
+              text.contains('secret');
+        }
+
+        if (selected == 'night') {
+          return text.contains('night') ||
+              text.contains('nightlife') ||
+              text.contains('bar') ||
+              text.contains('club') ||
+              text.contains('evening');
+        }
+
+        return text.contains(selected);
+      }).toList();
                 if (filtered.isEmpty) {
                   return SliverToBoxAdapter(child: _EmptyState(icon: Icons.search_off_rounded, title: 'No results', subtitle: 'Try a different category'));
                 }

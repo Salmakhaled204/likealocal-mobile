@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../models/place.dart';
@@ -42,10 +43,19 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     super.initState();
     _tabCtrl = TabController(length: 4, vsync: this);
     _checkFavorite();
+    _incrementViewCount();
   }
 
   @override
   void dispose() { _reviewCtrl.dispose(); _tabCtrl.dispose(); super.dispose(); }
+
+  Future<void> _incrementViewCount() async {
+    try {
+      await FirebaseFirestore.instance.collection('places').doc(_placeId).update({
+        'viewCount': FieldValue.increment(1),
+      });
+    } catch (_) {}
+  }
 
   Future<void> _checkFavorite() async {
     final uid = _uid;
@@ -333,6 +343,61 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     } catch (_) { _snack('Could not delete.'); }
   }
 
+  void _showQrCode(Place place) {
+    final qrData =
+        'likealocal://place/${place.id}?name=${Uri.encodeComponent(place.title)}&lat=${place.location.latitude}&lng=${place.location.longitude}';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.qr_code_2_rounded, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Share Place',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 200,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            place.title,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: AppTheme.textDark,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Scan to view this place',
+            style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textLight),
+            textAlign: TextAlign.center,
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   void _showPremiumDialog() {
     showDialog<void>(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Upgrade to Premium'),
@@ -392,6 +457,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         _buildStatChips(place),
+                        _buildVisitInfo(place),
                         const SizedBox(height: 22),
                         _buildDescription(place),
                         const SizedBox(height: 20),
@@ -438,6 +504,21 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         ),
       ),
       actions: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: GestureDetector(
+            onTap: () => _showQrCode(place),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.qr_code_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
@@ -507,6 +588,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               )),
               const SizedBox(width: 6),
               Text('${place.averageRating.toStringAsFixed(1)}/5', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 12),
+              Icon(Icons.visibility_outlined, size: 14, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text('${place.viewCount} views', style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70)),
             ]),
           ])),
           // Thumbnail strip bottom-right (like reference)
@@ -578,6 +663,22 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   }
 
   // ── Description ────────────────────────────────────────────────────────────
+
+  Widget _buildVisitInfo(Place place) {
+    final items = <Widget>[
+      if (place.viewCount > 0)
+        _VisitInfoRow(icon: Icons.visibility_outlined, label: 'Total views', value: '${place.viewCount} people viewed this place'),
+      if (place.bestTime.isNotEmpty)
+        _VisitInfoRow(icon: Icons.access_time_outlined, label: 'Best time to visit', value: place.bestTime),
+      if (place.openingHours.isNotEmpty)
+        _VisitInfoRow(icon: Icons.schedule_outlined, label: 'Opening hours', value: place.openingHours),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(children: items),
+    );
+  }
 
   Widget _buildDescription(Place place) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -886,6 +987,43 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 }
 
 // ── Sub-widgets ────────────────────────────────────────────────────────────────
+
+class _VisitInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _VisitInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, color: AppTheme.primary, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 3),
+            Text(value, style: GoogleFonts.poppins(fontSize: 14, color: AppTheme.textDark, fontWeight: FontWeight.w500)),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
 
 class _StatChip extends StatelessWidget {
   final IconData icon;

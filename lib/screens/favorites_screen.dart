@@ -34,6 +34,9 @@ class FavoritesScreen extends StatelessWidget {
           atmosphere: data['atmosphere'] ?? '',
           localTip: data['localTip'] ?? '',
           recommendedDish: data['recommendedDish'] ?? '',
+          bestTime: data['bestTime'] ?? '',
+          openingHours: data['openingHours'] ?? '',
+          viewCount: (data['viewCount'] as num?)?.toInt() ?? 0,
           ownerId: data['ownerId'] ?? '',
           ownerName: data['createdByName'] ?? data['ownerName'] ?? '',
           ownerIsSuperUser: data['ownerIsSuperUser'] ?? false,
@@ -70,6 +73,9 @@ class FavoritesScreen extends StatelessWidget {
                   'atmosphere': p.atmosphere,
                   'localTip': p.localTip,
                   'recommendedDish': p.recommendedDish,
+                  'bestTime': p.bestTime,
+                  'openingHours': p.openingHours,
+                  'viewCount': p.viewCount,
                   'ownerId': p.ownerId,
                   'ownerName': p.ownerName,
                   'ownerIsSuperUser': p.ownerIsSuperUser,
@@ -102,6 +108,9 @@ class FavoritesScreen extends StatelessWidget {
         atmosphere: d['atmosphere'] ?? '',
         localTip: d['localTip'] ?? '',
         recommendedDish: d['recommendedDish'] ?? '',
+        bestTime: d['bestTime'] ?? '',
+        openingHours: d['openingHours'] ?? '',
+        viewCount: (d['viewCount'] as num?)?.toInt() ?? 0,
         ownerId: d['ownerId'] ?? '',
         ownerName: d['ownerName'] ?? '',
         ownerIsSuperUser: d['ownerIsSuperUser'] ?? false,
@@ -124,7 +133,6 @@ class FavoritesScreen extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Teal header matching home screen style ─────────────────────
           Container(
             padding: const EdgeInsets.fromLTRB(22, 56, 22, 28),
             decoration: const BoxDecoration(
@@ -134,27 +142,14 @@ class FavoritesScreen extends StatelessWidget {
             child: Row(
               children: [
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Saved Places',
-                      style: GoogleFonts.poppins(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white)),
-                  Text('Your personal collection',
-                      style: GoogleFonts.poppins(
-                          fontSize: 13, color: Colors.white60)),
+                  Text('Saved Places', style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white)),
+                  Text('Your personal collection', style: GoogleFonts.poppins(fontSize: 13, color: Colors.white60)),
                 ]),
                 const Spacer(),
                 Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.25)),
-                  ),
-                  child: const Icon(Icons.favorite_rounded,
-                      color: Colors.white, size: 24),
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.white.withValues(alpha: 0.25))),
+                  child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 24),
                 ),
               ],
             ),
@@ -171,11 +166,8 @@ class FavoritesScreen extends StatelessWidget {
                         .orderBy('savedAt', descending: true)
                         .snapshots(),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Center(
-                            child: CircularProgressIndicator(
-                                color: AppTheme.primary));
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
                       }
                       if (snapshot.hasError) {
                         return FutureBuilder<List<Place>>(
@@ -183,8 +175,7 @@ class FavoritesScreen extends StatelessWidget {
                           builder: (context, cacheSnap) {
                             final cached = cacheSnap.data ?? [];
                             if (cached.isEmpty) return _buildError();
-                            return _buildList(context, cached,
-                                offline: true);
+                            return _buildList(context, cached, offline: true);
                           },
                         );
                       }
@@ -193,11 +184,8 @@ class FavoritesScreen extends StatelessWidget {
                       return FutureBuilder<List<Place>>(
                         future: _loadFavoritePlaces(docs),
                         builder: (context, placesSnap) {
-                          if (placesSnap.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator(
-                                    color: AppTheme.primary));
+                          if (placesSnap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
                           }
                           final places = placesSnap.data ?? [];
                           if (places.isNotEmpty) _cache(places);
@@ -213,72 +201,36 @@ class FavoritesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildList(BuildContext context, List<Place> places,
-      {bool offline = false}) {
-    final avgRating = places.isEmpty
-        ? 0.0
-        : places.map((p) => p.averageRating).reduce((a, b) => a + b) /
-            places.length;
+  Widget _buildList(BuildContext context, List<Place> places, {bool offline = false}) {
+    final avgRating = places.isEmpty ? 0.0 : places.map((p) => p.averageRating).reduce((a, b) => a + b) / places.length;
     final superCount = places.where((p) => p.ownerIsSuperUser).length;
 
     return Column(
       children: [
-        // ── Offline banner ──────────────────────────────────────────────
         if (offline)
           Container(
             margin: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.amber.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: AppTheme.amber.withValues(alpha: 0.3)),
-            ),
-            child: Row(children: [
-              Icon(Icons.wifi_off_rounded,
-                  color: AppTheme.amber, size: 16),
-              const SizedBox(width: 8),
-              Text('Offline — showing cached favorites',
-                  style: GoogleFonts.poppins(
-                      fontSize: 12, color: AppTheme.amber)),
-            ]),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(color: AppTheme.amber.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.amber.withValues(alpha: 0.3))),
+            child: Row(children: [Icon(Icons.wifi_off_rounded, color: AppTheme.amber, size: 16), const SizedBox(width: 8), Text('Offline — showing cached favorites', style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.amber))]),
           ),
 
-        // ── Stats row ───────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-          child: Row(
-            children: [
-              _StatChip(
-                  label: '${places.length}',
-                  sublabel: 'Places',
-                  icon: Icons.place_outlined,
-                  color: AppTheme.primary),
-              const SizedBox(width: 12),
-              _StatChip(
-                  label: avgRating.toStringAsFixed(1),
-                  sublabel: 'Avg Rating',
-                  icon: Icons.star_rounded,
-                  color: AppTheme.amber),
-              const SizedBox(width: 12),
-              _StatChip(
-                  label: '$superCount',
-                  sublabel: 'Super User',
-                  icon: Icons.workspace_premium_rounded,
-                  color: AppTheme.accent),
-            ],
-          ),
+          child: Row(children: [
+            _StatChip(label: '${places.length}', sublabel: 'Places', icon: Icons.place_outlined, color: AppTheme.primary),
+            const SizedBox(width: 12),
+            _StatChip(label: avgRating.toStringAsFixed(1), sublabel: 'Avg Rating', icon: Icons.star_rounded, color: AppTheme.amber),
+            const SizedBox(width: 12),
+            _StatChip(label: '$superCount', sublabel: 'Super User', icon: Icons.workspace_premium_rounded, color: AppTheme.accent),
+          ]),
         ),
 
-        // ── Place list ──────────────────────────────────────────────────
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
             itemCount: places.length,
-            itemBuilder: (context, i) => PlaceCard(
-                place: places[i],
-                onTap: () => _goToDetails(context, places[i])),
+            itemBuilder: (context, i) => PlaceCard(place: places[i], onTap: () => _goToDetails(context, places[i])),
           ),
         ),
       ],
@@ -288,27 +240,11 @@ class FavoritesScreen extends StatelessWidget {
   Widget _buildEmpty() {
     return Center(
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Container(
-          width: 88,
-          height: 88,
-          decoration: BoxDecoration(
-            color: AppTheme.primaryLight,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.favorite_border_rounded,
-              size: 42, color: AppTheme.primary),
-        ),
+        Container(width: 88, height: 88, decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle), child: const Icon(Icons.favorite_border_rounded, size: 42, color: AppTheme.primary)),
         const SizedBox(height: 20),
-        Text('No saved places yet',
-            style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textDark)),
+        Text('No saved places yet', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
         const SizedBox(height: 8),
-        Text('Tap the heart on any place to save it',
-            style: GoogleFonts.poppins(
-                fontSize: 13, color: AppTheme.textLight),
-            textAlign: TextAlign.center),
+        Text('Tap the heart on any place to save it', style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textLight), textAlign: TextAlign.center),
       ]),
     );
   }
@@ -316,20 +252,9 @@ class FavoritesScreen extends StatelessWidget {
   Widget _buildNotLoggedIn() {
     return Center(
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-              color: AppTheme.primaryLight, shape: BoxShape.circle),
-          child: const Icon(Icons.lock_outline_rounded,
-              size: 40, color: AppTheme.primary),
-        ),
+        Container(width: 80, height: 80, decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle), child: const Icon(Icons.lock_outline_rounded, size: 40, color: AppTheme.primary)),
         const SizedBox(height: 16),
-        Text('Log in to view favorites',
-            style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textDark)),
+        Text('Log in to view favorites', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textDark)),
       ]),
     );
   }
@@ -337,65 +262,33 @@ class FavoritesScreen extends StatelessWidget {
   Widget _buildError() {
     return Center(
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-              color: AppTheme.errorColor.withValues(alpha: 0.1),
-              shape: BoxShape.circle),
-          child: Icon(Icons.error_outline_rounded,
-              size: 40, color: AppTheme.errorColor),
-        ),
+        Container(width: 80, height: 80, decoration: BoxDecoration(color: AppTheme.errorColor.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(Icons.error_outline_rounded, size: 40, color: AppTheme.errorColor)),
         const SizedBox(height: 12),
-        Text('Could not load favorites',
-            style:
-                GoogleFonts.poppins(fontSize: 15, color: AppTheme.textMid)),
+        Text('Could not load favorites', style: GoogleFonts.poppins(fontSize: 15, color: AppTheme.textMid)),
       ]),
     );
   }
 }
 
-// ── Stat chip widget ───────────────────────────────────────────────────────────
 class _StatChip extends StatelessWidget {
   final String label, sublabel;
   final IconData icon;
   final Color color;
-
-  const _StatChip({
-    required this.label,
-    required this.sublabel,
-    required this.icon,
-    required this.color,
-  });
+  const _StatChip({required this.label, required this.sublabel, required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: 0.2))),
         child: Row(children: [
           Icon(icon, color: color, size: 18),
           const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textDark)),
-                  Text(sublabel,
-                      style: GoogleFonts.poppins(
-                          fontSize: 10, color: AppTheme.textLight)),
-                ]),
-          ),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+            Text(sublabel, style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textLight)),
+          ])),
         ]),
       ),
     );
