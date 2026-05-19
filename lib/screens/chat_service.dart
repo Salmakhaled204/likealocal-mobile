@@ -93,7 +93,7 @@ class ChatService {
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount_${currentUser.uid}': 0,
           'unreadCount_$otherUserId': 0,
-          if (placeId != null) 'placeId': placeId,
+          'placeId': ?placeId,
           'createdAt': FieldValue.serverTimestamp(),
         });
       } else if (placeId != null) {
