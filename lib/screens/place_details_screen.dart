@@ -343,60 +343,83 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     } catch (_) { _snack('Could not delete.'); }
   }
 
-  void _showQrCode(Place place) {
-    final qrData =
-        'likealocal://place/${place.id}?name=${Uri.encodeComponent(place.title)}&lat=${place.location.latitude}&lng=${place.location.longitude}';
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
+void _showQrCode(Place place) {
+  final qrData =
+      'likealocal://place/${place.id}?name=${Uri.encodeComponent(place.title)}&lat=${place.location.latitude}&lng=${place.location.longitude}';
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Row(
+        children: [
           const Icon(Icons.qr_code_2_rounded, color: AppTheme.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Share Place',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
           ),
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: QrImageView(
-              data: qrData,
-              version: QrVersions.auto,
-              size: 200,
-              backgroundColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            place.title,
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-              color: AppTheme.textDark,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Scan to view this place',
-            style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textLight),
-            textAlign: TextAlign.center,
-          ),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       ),
-    );
-  }
+      content: SizedBox(
+        width: 260,
+        height: 330,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 220,
+              height: 220,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: QrImageView(
+                data: qrData,
+                version: QrVersions.auto,
+                size: 180,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              place.title,
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: AppTheme.textDark,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Scan to view this place',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppTheme.textLight,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
 
   void _showPremiumDialog() {
     showDialog<void>(context: context, builder: (ctx) => AlertDialog(

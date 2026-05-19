@@ -337,20 +337,18 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
+      final imageUrls = await _uploadImages(docRef.id);
+      final videoUrls = await _uploadVideos(docRef.id);
+
+      placeData['imageUrls'] = [..._existingImageUrls, ...imageUrls];
+      placeData['videoUrls'] = [..._existingVideoUrls, ...videoUrls];
+
       if (_isEditing) {
         await docRef.update(placeData);
       } else {
         await docRef.set(placeData);
         await _recordSuccessfulContribution(user.uid, role);
       }
-
-      final imageUrls = await _uploadImages(docRef.id);
-      final videoUrls = await _uploadVideos(docRef.id);
-
-      await docRef.update({
-        'imageUrls': [..._existingImageUrls, ...imageUrls],
-        'videoUrls': [..._existingVideoUrls, ...videoUrls],
-      });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -573,7 +571,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _savePlace,
                   icon: _isSaving ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.add_location_alt),
-                  label: Text(_isSaving ? _uploadedCount == 0 ? 'Saving place…' : 'Uploading images ($_uploadedCount/${_selectedImages.length})…' : _isEditing ? 'Save Changes' : 'Add Place', style: const TextStyle(fontSize: 16)),
+                  label: Text(_isSaving ? _uploadedCount == 0 ? 'Saving place…' : 'Uploading images ($_uploadedCount/${_selectedImages.length})…' :_isEditing ? 'Save Changes' : 'Upload & Add Place', style: const TextStyle(fontSize: 16)),
                 ),
               ),
               const SizedBox(height: 30),
